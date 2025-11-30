@@ -1,25 +1,19 @@
-FROM maven:3.9-eclipse-temurin-17 AS build
+FROM node:18-alpine
 
 WORKDIR /app
 
-# Copier les fichiers pom et source
-COPY pom.xml .
-COPY src ./src
+# Copy package files
+COPY package*.json ./
 
-# Construire l'application
-RUN mvn clean package -DskipTests
+# Install dependencies
+RUN npm install --production
 
-# Image finale
-FROM eclipse-temurin:17-jre-jammy
+# Copy application code
+COPY server.js ./
 
-WORKDIR /app
-
-# Copier le JAR depuis l'étape de build
-COPY --from=build /app/target/patient-core-service-1.0.0.jar app.jar
-
-# Créer le répertoire pour les données
+# Create data directory
 RUN mkdir -p /app/data
 
 EXPOSE 8080
 
-ENTRYPOINT ["java", "-jar", "app.jar"]
+CMD ["node", "server.js"]

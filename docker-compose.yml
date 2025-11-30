@@ -5,7 +5,7 @@ services:
   # MACHINE 1 : SIÈGE (Hannibal - HQ)
   # ============================================
   
-  # Service 1 : Patient-Core-Service (Java/Spring Boot)
+  # Service 1 : Patient-Core-Service (Node.js)
   patient-core-service:
     build:
       context: ./machine1/patient-core-service
@@ -15,11 +15,12 @@ services:
     networks:
       - novacare-network
     environment:
-      - SPRING_PROFILES_ACTIVE=docker
+      - NODE_ENV=production
+      - PORT=8080
     volumes:
       - patient-data:/app/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -44,7 +45,7 @@ services:
       timeout: 10s
       retries: 3
 
-  # ESB 1 : Central (Apache Camel)
+  # ESB 1 : Central (Node.js)
   esb-central:
     build:
       context: ./machine1/esb-central
@@ -54,11 +55,18 @@ services:
     networks:
       - novacare-network
     environment:
+      - NODE_ENV=production
+      - PORT=8081
       - PATIENT_SERVICE_URL=http://patient-core-service:8080
       - BILLING_SERVICE_URL=http://billing-service:3000
     depends_on:
       - patient-core-service
       - billing-service
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8081/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   # ============================================
   # MACHINE 2 : CLINIQUE SPÉCIALISÉE (El Hayet)
@@ -101,7 +109,7 @@ services:
       timeout: 10s
       retries: 3
 
-  # ESB 2 : Local (Apache Camel)
+  # ESB 2 : Local (Node.js)
   esb-local:
     build:
       context: ./machine2/esb-local
@@ -111,12 +119,19 @@ services:
     networks:
       - novacare-network
     environment:
+      - NODE_ENV=production
+      - PORT=8082
       - CARDIO_SERVICE_URL=http://cardio-consultation-service:5000
       - APPOINTMENT_SERVICE_URL=http://local-appointment-service:80
       - ESB_CENTRAL_URL=http://esb-central:8081
     depends_on:
       - cardio-consultation-service
       - local-appointment-service
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8082/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   # ============================================
   # MACHINE 3 : ORCHESTRATION & ACCÈS (Cloud)

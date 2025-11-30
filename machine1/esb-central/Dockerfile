@@ -1,18 +1,16 @@
-FROM maven:3.9-eclipse-temurin-17 AS build
+FROM node:18-alpine
 
 WORKDIR /app
 
-COPY pom.xml .
-COPY src ./src
+# Copy package files
+COPY package*.json ./
 
-RUN mvn clean package -DskipTests
+# Install dependencies
+RUN npm install --production
 
-FROM eclipse-temurin:17-jre-jammy
-
-WORKDIR /app
-
-COPY --from=build /app/target/esb-central-1.0.0.jar app.jar
+# Copy application code
+COPY server.js ./
 
 EXPOSE 8081
 
-ENTRYPOINT ["java", "-jar", "app.jar"]
+CMD ["node", "server.js"]

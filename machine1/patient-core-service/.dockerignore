@@ -1,8 +1,5 @@
-target/
-.mvn/
-.mvnw/
-*.iml
-.idea/
-.vscode/
-
-
+node_modules
+npm-debug.log
+data
+*.db
+.DS_Store
