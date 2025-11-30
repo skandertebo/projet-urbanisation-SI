@@ -1,0 +1,233 @@
+version: '3.8'
+
+services:
+  # ============================================
+  # MACHINE 1 : SIÈGE (Hannibal - HQ)
+  # ============================================
+  
+  # Service 1 : Patient-Core-Service (Java/Spring Boot)
+  patient-core-service:
+    build:
+      context: ./machine1/patient-core-service
+    container_name: patient-core-service
+    ports:
+      - "8080:8080"
+    networks:
+      - novacare-network
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+    volumes:
+      - patient-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Service 2 : Billing-Service (Node.js)
+  billing-service:
+    build:
+      context: ./machine1/billing-service
+    container_name: billing-service
+    ports:
+      - "3000:3000"
+    networks:
+      - novacare-network
+    environment:
+      - NODE_ENV=production
+      - PATIENT_SERVICE_URL=http://patient-core-service:8080
+    depends_on:
+      - patient-core-service
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ESB 1 : Central (Apache Camel)
+  esb-central:
+    build:
+      context: ./machine1/esb-central
+    container_name: esb-central
+    ports:
+      - "8081:8081"
+    networks:
+      - novacare-network
+    environment:
+      - PATIENT_SERVICE_URL=http://patient-core-service:8080
+      - BILLING_SERVICE_URL=http://billing-service:3000
+    depends_on:
+      - patient-core-service
+      - billing-service
+
+  # ============================================
+  # MACHINE 2 : CLINIQUE SPÉCIALISÉE (El Hayet)
+  # ============================================
+
+  # Service 3 : Cardio-Consultation-Service (Python/Flask)
+  cardio-consultation-service:
+    build:
+      context: ./machine2/cardio-consultation-service
+    container_name: cardio-consultation-service
+    ports:
+      - "5001:5000"
+    networks:
+      - novacare-network
+    environment:
+      - FLASK_ENV=production
+      - ESB_LOCAL_URL=http://esb-local:8082
+    volumes:
+      - cardio-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Service 4 : Local-Appointment-Service (PHP)
+  local-appointment-service:
+    build:
+      context: ./machine2/local-appointment-service
+    container_name: local-appointment-service
+    ports:
+      - "8002:80"
+    networks:
+      - novacare-network
+    volumes:
+      - appointments-data:/var/www/html/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ESB 2 : Local (Apache Camel)
+  esb-local:
+    build:
+      context: ./machine2/esb-local
+    container_name: esb-local
+    ports:
+      - "8082:8082"
+    networks:
+      - novacare-network
+    environment:
+      - CARDIO_SERVICE_URL=http://cardio-consultation-service:5000
+      - APPOINTMENT_SERVICE_URL=http://local-appointment-service:80
+      - ESB_CENTRAL_URL=http://esb-central:8081
+    depends_on:
+      - cardio-consultation-service
+      - local-appointment-service
+
+  # ============================================
+  # MACHINE 3 : ORCHESTRATION & ACCÈS (Cloud)
+  # ============================================
+
+  # Service 5 : Notification-Service (Go)
+  notification-service:
+    build:
+      context: ./machine3/notification-service
+    container_name: notification-service
+    ports:
+      - "8083:8083"
+    networks:
+      - novacare-network
+    environment:
+      - PORT=8083
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8083/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # API Gateway (Kong)
+  kong-database:
+    image: postgres:13
+    container_name: kong-database
+    environment:
+      - POSTGRES_USER=kong
+      - POSTGRES_PASSWORD=kong
+      - POSTGRES_DB=kong
+    networks:
+      - novacare-network
+    volumes:
+      - kong-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kong"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kong-migration:
+    image: kong:latest
+    container_name: kong-migration
+    command: kong migrations bootstrap
+    networks:
+      - novacare-network
+    environment:
+      - KONG_DATABASE=postgres
+      - KONG_PG_HOST=kong-database
+      - KONG_PG_USER=kong
+      - KONG_PG_PASSWORD=kong
+    depends_on:
+      kong-database:
+        condition: service_healthy
+
+  kong:
+    image: kong:latest
+    container_name: api-gateway
+    ports:
+      - "8001:8001"  # Admin API
+      - "8000:8000"  # Proxy
+    networks:
+      - novacare-network
+    environment:
+      - KONG_DATABASE=postgres
+      - KONG_PG_HOST=kong-database
+      - KONG_PG_USER=kong
+      - KONG_PG_PASSWORD=kong
+      - KONG_PROXY_ACCESS_LOG=/dev/stdout
+      - KONG_ADMIN_ACCESS_LOG=/dev/stdout
+      - KONG_PROXY_ERROR_LOG=/dev/stderr
+      - KONG_ADMIN_ERROR_LOG=/dev/stderr
+      - KONG_ADMIN_LISTEN=0.0.0.0:8001
+    depends_on:
+      - kong-database
+      - kong-migration
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Camunda BPM
+  camunda:
+    image: camunda/camunda-bpm-platform:latest
+    container_name: camunda-bpm
+    ports:
+      - "8084:8080"
+    networks:
+      - novacare-network
+    environment:
+      - DB_DRIVER=org.h2.Driver
+      - DB_URL=jdbc:h2:./camunda-h2-database
+      - DB_USERNAME=sa
+      - DB_PASSWORD=
+    volumes:
+      - camunda-data:/camunda/webapps
+      - ./machine3/camunda/processes:/camunda/webapps/processes
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/camunda"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  novacare-network:
+    driver: bridge
+
+volumes:
+  patient-data:
+  cardio-data:
+  appointments-data:
+  kong-data:
+  camunda-data:

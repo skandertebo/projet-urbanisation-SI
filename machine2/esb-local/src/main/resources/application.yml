@@ -1,0 +1,25 @@
+server:
+  port: -1  # Désactiver le serveur web Spring Boot (Camel/Jetty gère les routes)
+
+spring:
+  application:
+    name: esb-local
+
+cardio:
+  service:
+    url: http://cardio-consultation-service:5000
+
+appointment:
+  service:
+    url: http://local-appointment-service:80
+
+esb:
+  central:
+    url: http://esb-central:8081
+
+logging:
+  level:
+    org.apache.camel: INFO
+    com.novacare: DEBUG
+
+

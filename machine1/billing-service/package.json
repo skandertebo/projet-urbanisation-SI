@@ -1,0 +1,17 @@
+{
+  "name": "billing-service",
+  "version": "1.0.0",
+  "description": "Service de facturation pour NovaCare",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "axios": "^1.6.0",
+    "pdfkit": "^0.13.0",
+    "uuid": "^9.0.1"
+  }
+}
+
+

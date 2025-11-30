@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" 
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" 
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" 
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI" 
+                  xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+                  id="Definitions_1" 
+                  targetNamespace="http://bpmn.io/schema/bpmn">
+  
+  <bpmn:process id="admission-patient" name="Admission Patient &amp; Synchronisation" isExecutable="true">
+    
+    <!-- Start Event -->
+    <bpmn:startEvent id="StartEvent_1" name="Check-in Patient">
+      <bpmn:outgoing>Flow_1</bpmn:outgoing>
+    </bpmn:startEvent>
+    
+    <!-- Service Task: Recherche locale -->
+    <bpmn:serviceTask id="ServiceTask_SearchLocal" name="Recherche Patient Local">
+      <bpmn:extensionElements>
+        <camunda:connector>
+          <camunda:connectorId>http-connector</camunda:connectorId>
+          <camunda:inputOutput>
+            <camunda:inputParameter name="url">http://esb-local:8082/api/checkin?cin=${cin}</camunda:inputParameter>
+            <camunda:inputParameter name="method">GET</camunda:inputParameter>
+            <camunda:outputParameter name="response">${response}</camunda:outputParameter>
+          </camunda:inputOutput>
+        </camunda:connector>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_1</bpmn:incoming>
+      <bpmn:outgoing>Flow_2</bpmn:outgoing>
+    </bpmn:serviceTask>
+    
+    <!-- Exclusive Gateway: Patient trouvé ? -->
+    <bpmn:exclusiveGateway id="Gateway_PatientFound" name="Patient trouvé ?">
+      <bpmn:incoming>Flow_2</bpmn:incoming>
+      <bpmn:outgoing>Flow_3</bpmn:outgoing>
+      <bpmn:outgoing>Flow_4</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    
+    <!-- End Event: Patient trouvé localement -->
+    <bpmn:endEvent id="EndEvent_Found" name="Patient trouvé">
+      <bpmn:incoming>Flow_3</bpmn:incoming>
+    </bpmn:endEvent>
+    
+    <!-- Service Task: Recherche au siège -->
+    <bpmn:serviceTask id="ServiceTask_SearchHQ" name="Recherche au Siège">
+      <bpmn:extensionElements>
+        <camunda:connector>
+          <camunda:connectorId>http-connector</camunda:connectorId>
+          <camunda:inputOutput>
+            <camunda:inputParameter name="url">http://esb-central:8081/api/patient/search?cin=${cin}</camunda:inputParameter>
+            <camunda:inputParameter name="method">GET</camunda:inputParameter>
+          </camunda:inputOutput>
+        </camunda:connector>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_4</bpmn:incoming>
+      <bpmn:outgoing>Flow_5</bpmn:outgoing>
+    </bpmn:serviceTask>
+    
+    <!-- Exclusive Gateway: Patient trouvé au siège ? -->
+    <bpmn:exclusiveGateway id="Gateway_HQFound" name="Trouvé au siège ?">
+      <bpmn:incoming>Flow_5</bpmn:incoming>
+      <bpmn:outgoing>Flow_6</bpmn:outgoing>
+      <bpmn:outgoing>Flow_7</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    
+    <!-- Service Task: Synchroniser le profil -->
+    <bpmn:serviceTask id="ServiceTask_Sync" name="Synchroniser le Profil">
+      <bpmn:extensionElements>
+        <camunda:connector>
+          <camunda:connectorId>http-connector</camunda:connectorId>
+          <camunda:inputOutput>
+            <camunda:inputParameter name="url">http://cardio-consultation-service:5000/api/local_patient</camunda:inputParameter>
+            <camunda:inputParameter name="method">POST</camunda:inputParameter>
+            <camunda:inputParameter name="payload">${patientData}</camunda:inputParameter>
+          </camunda:inputOutput>
+        </camunda:connector>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_6</bpmn:incoming>
+      <bpmn:outgoing>Flow_8</bpmn:outgoing>
+    </bpmn:serviceTask>
+    
+    <!-- User Task: Créer Dossier -->
+    <bpmn:userTask id="UserTask_Create" name="Créer Dossier Patient">
+      <bpmn:incoming>Flow_7</bpmn:incoming>
+      <bpmn:outgoing>Flow_9</bpmn:outgoing>
+    </bpmn:userTask>
+    
+    <!-- End Events -->
+    <bpmn:endEvent id="EndEvent_Synced" name="Patient synchronisé">
+      <bpmn:incoming>Flow_8</bpmn:incoming>
+    </bpmn:endEvent>
+    
+    <bpmn:endEvent id="EndEvent_Created" name="Dossier créé">
+      <bpmn:incoming>Flow_9</bpmn:incoming>
+    </bpmn:endEvent>
+    
+    <!-- Sequence Flows -->
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_1" targetRef="ServiceTask_SearchLocal" />
+    <bpmn:sequenceFlow id="Flow_2" sourceRef="ServiceTask_SearchLocal" targetRef="Gateway_PatientFound" />
+    <bpmn:sequenceFlow id="Flow_3" name="Oui" sourceRef="Gateway_PatientFound" targetRef="EndEvent_Found" />
+    <bpmn:sequenceFlow id="Flow_4" name="Non" sourceRef="Gateway_PatientFound" targetRef="ServiceTask_SearchHQ" />
+    <bpmn:sequenceFlow id="Flow_5" sourceRef="ServiceTask_SearchHQ" targetRef="Gateway_HQFound" />
+    <bpmn:sequenceFlow id="Flow_6" name="Oui" sourceRef="Gateway_HQFound" targetRef="ServiceTask_Sync" />
+    <bpmn:sequenceFlow id="Flow_7" name="Non" sourceRef="Gateway_HQFound" targetRef="UserTask_Create" />
+    <bpmn:sequenceFlow id="Flow_8" sourceRef="ServiceTask_Sync" targetRef="EndEvent_Synced" />
+    <bpmn:sequenceFlow id="Flow_9" sourceRef="UserTask_Create" targetRef="EndEvent_Created" />
+    
+  </bpmn:process>
+  
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="admission-patient">
+      <!-- Diagram elements would go here -->
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+  
+</bpmn:definitions>
+
+
