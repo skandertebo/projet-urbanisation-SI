@@ -123,7 +123,7 @@ docker-compose down -v
 
 ## 📝 Notes Importantes
 
-- Les services Java nécessitent Maven pour la compilation (fait automatiquement dans Docker)
+- Les services Node.js utilisent npm pour l'installation des dépendances (fait automatiquement dans Docker)
 - Les données sont persistées dans des volumes Docker
 - Camunda nécessite quelques secondes pour démarrer complètement
 - Kong nécessite la base de données PostgreSQL pour fonctionner

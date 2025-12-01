@@ -11,10 +11,10 @@ Ce POC démontre l'urbanisation des systèmes informatiques pour NovaCare Medica
 
 #### Services :
 1. **Patient-Core-Service** (Port 8080)
-   - Technologie : Java 17 + Spring Boot 3.1.5
+   - Technologie : Node.js 18 + Express
    - Rôle : Référentiel unique des patients (MPI - Master Patient Index)
-   - Base de données : H2 (fichier)
-   - API : REST (JSON/XML)
+   - Base de données : SQLite (fichier)
+   - API : REST (JSON)
 
 2. **Billing-Service** (Port 3000)
    - Technologie : Node.js 18 + Express
@@ -22,7 +22,7 @@ Ce POC démontre l'urbanisation des systèmes informatiques pour NovaCare Medica
    - Dépendances : Patient-Core-Service
 
 3. **ESB Central** (Port 8081)
-   - Technologie : Apache Camel 4.0 + Spring Boot
+   - Technologie : Node.js 18 + Express
    - Rôle : Médiation centrale, transformation de données
    - Routes : Recherche patient, création patient, facturation
 
@@ -43,7 +43,7 @@ Ce POC démontre l'urbanisation des systèmes informatiques pour NovaCare Medica
    - API : REST (JSON)
 
 3. **ESB Local** (Port 8082)
-   - Technologie : Apache Camel 4.0 + Spring Boot
+   - Technologie : Node.js 18 + Express
    - Rôle : Médiation locale, proxy vers ESB Central
    - Routes : Check-in patient, synchronisation
 
@@ -88,7 +88,7 @@ ESB Local :8082
                 ↓
                 Si trouvé : Synchronisation
                     ↓
-                    ESB Central :8081 (Transformation XML→JSON)
+                    ESB Central :8081 (Transformation de données)
                         ↓
                         ESB Local :8082
                             ↓
@@ -115,19 +115,18 @@ Camunda BPM :8084 (Déclenchement processus)
 ## Technologies Utilisées
 
 ### Backend Services
-- **Java/Spring Boot** : Services critiques, intégration
-- **Node.js/Express** : Services légers, génération PDF
+- **Node.js/Express** : Services principaux, intégration, génération PDF
 - **Python/Flask** : Services de données, rapidité de développement
 - **PHP/Apache** : Simulation de système legacy
 - **Go** : Service haute performance
 
 ### Middleware & Integration
-- **Apache Camel** : ESB pour médiation et transformation
+- **Node.js/Express** : ESB pour médiation et transformation
 - **Kong** : API Gateway pour routage et sécurité
 - **Camunda BPM** : Orchestration des processus métier
 
 ### Stockage
-- **H2 Database** : Base de données embarquée (Java services)
+- **SQLite** : Base de données embarquée (Node.js services)
 - **JSON Files** : Stockage simple pour POC (Python, PHP)
 - **PostgreSQL** : Base de données pour Kong
 
@@ -139,7 +138,7 @@ Camunda BPM :8084 (Déclenchement processus)
 - ESB pour abstraction des adresses IP
 
 ### 2. Médiation par ESB
-- Transformation de formats (XML ↔ JSON)
+- Transformation de formats de données
 - Routage intelligent
 - Gestion des erreurs
 - Logging centralisé

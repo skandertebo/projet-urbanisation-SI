@@ -10,14 +10,14 @@ Ce projet est un Proof of Concept (POC) pour l'urbanisation des systèmes inform
 ## 🏗️ Architecture
 
 ### Machine 1 : Siège (Hannibal - HQ)
-- **Patient-Core-Service** (Java/Spring Boot) - Port 8080
+- **Patient-Core-Service** (Node.js) - Port 8080
 - **Billing-Service** (Node.js) - Port 3000
-- **ESB 1 Central** (Apache Camel) - Port 8081
+- **ESB 1 Central** (Node.js) - Port 8081
 
 ### Machine 2 : Clinique Spécialisée (El Hayet)
 - **Cardio-Consultation-Service** (Python/Flask) - Port 5001
 - **Local-Appointment-Service** (PHP) - Port 8002
-- **ESB 2 Local** (Apache Camel) - Port 8082
+- **ESB 2 Local** (Node.js) - Port 8082
 
 ### Machine 3 : Orchestration & Accès (Cloud)
 - **API Gateway** (Kong) - Ports 8000 (Proxy), 8001 (Admin)
@@ -115,7 +115,7 @@ Les services communiquent via le réseau Docker `novacare-network`. Chaque servi
 ## 📝 Notes
 
 - Les bases de données utilisent des fichiers JSON/SQLite pour simplifier le POC
-- Les ESB utilisent Apache Camel pour la médiation
+- Les ESB utilisent Node.js/Express pour la médiation et le routage
 - Camunda BPM orchestre les processus métier
 - Kong sert de point d'entrée unique (API Gateway)
 

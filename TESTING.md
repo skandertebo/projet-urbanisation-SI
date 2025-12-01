@@ -22,7 +22,7 @@ Tous les services doivent être en état "Up" ou "healthy".
 Attendez environ 30-60 secondes pour que tous les services soient complètement démarrés, surtout :
 - Kong (nécessite PostgreSQL)
 - Camunda BPM
-- Services Java (compilation Maven)
+- Services Node.js (installation des dépendances npm)
 
 ---
 
