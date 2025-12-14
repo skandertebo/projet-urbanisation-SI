@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" >
+		<http:listener-connection host="0.0.0.0" port="8082" />
+	</http:listener-config>
+
+	<http:request-config name="Cardio_Service_Request_Config" doc:name="HTTP Request configuration" >
+		<http:request-connection host="cardio-consultation-service" port="5000" />
+	</http:request-config>
+
+	<http:request-config name="Central_ESB_Request_Config" doc:name="HTTP Request configuration" >
+		<http:request-connection host="esb-central" port="8081" />
+	</http:request-config>
+
+	<!-- Route: Check-in (Orchestration) -->
+	<flow name="checkin-flow" >
+		<http:listener doc:name="GET /api/checkin" config-ref="HTTP_Listener_config" path="/api/checkin" allowedMethods="GET"/>
+		<set-variable value="#[attributes.queryParams.cin]" doc:name="Set CIN Variable" variableName="cin"/>
+		<logger level="INFO" doc:name="Log Request" message="ESB Local: Check-in patient - CIN: #[vars.cin]"/>
+
+		<try doc:name="Try Local Search">
+			<http:request method="GET" doc:name="Call Local Cardio Service" config-ref="Cardio_Service_Request_Config" path="/api/local_patient/cin/{cin}">
+				<http:uri-params ><![CDATA[#[output application/java
+---
+{
+	"cin" : vars.cin
+}]]]></http:uri-params>
+			</http:request>
+			<logger level="INFO" doc:name="Log Local Success" message="ESB Local: Patient trouvé localement"/>
+
+			<error-handler >
+				<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue (Not Found Locally)" type="HTTP:NOT_FOUND">
+					<logger level="INFO" doc:name="Log Local Fail" message="ESB Local: Patient non trouvé localement, recherche au siège..."/>
+
+					<!-- Call Central ESB -->
+					<http:request method="GET" doc:name="Call Central ESB" config-ref="Central_ESB_Request_Config" path="/api/patient/search">
+						<http:query-params ><![CDATA[#[output application/java
+---
+{
+	"cin" : vars.cin
+}]]]></http:query-params>
+					</http:request>
+
+					<!-- Sync to Local -->
+					<logger level="INFO" doc:name="Log Central Success" message="ESB Local: Patient trouvé au siège, synchronisation..."/>
+					<set-variable value="#[payload]" doc:name="Save Patient Data" variableName="patientData"/>
+
+					<try doc:name="Try Sync">
+						<http:request method="POST" doc:name="Sync to Local Cardio Service" config-ref="Cardio_Service_Request_Config" path="/api/local_patient">
+							<http:body ><![CDATA[#[vars.patientData]]]></http:body>
+						</http:request>
+						<logger level="INFO" doc:name="Log Sync Success" message="ESB Local: Patient synchronisé avec succès"/>
+						<error-handler >
+							<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue (Sync Failed)" >
+								<logger level="ERROR" doc:name="Log Sync Error" message="ESB Local: Erreur lors de la synchronisation"/>
+							</on-error-continue>
+						</error-handler>
+					</try>
+
+					<set-payload value="#[vars.patientData]" doc:name="Restore Payload"/>
+				</on-error-continue>
+			</error-handler>
+		</try>
+	</flow>
+
+	<!-- Route: Get Consultations -->
+	<flow name="get-consultations-flow" >
+		<http:listener doc:name="GET /api/consultation/patient/{patientId}" config-ref="HTTP_Listener_config" path="/api/consultation/patient/{patientId}" allowedMethods="GET"/>
+		<logger level="INFO" doc:name="Log Request" message="ESB Local: Récupération consultations"/>
+		<http:request method="GET" doc:name="Call Cardio Service" config-ref="Cardio_Service_Request_Config" path="/api/consultation/patient/{patientId}">
+			<http:uri-params ><![CDATA[#[output application/java
+---
+{
+	"patientId" : attributes.uriParams.patientId
+}]]]></http:uri-params>
+		</http:request>
+	</flow>
+
+	<!-- Health Check -->
+	<flow name="health-check-flow">
+		<http:listener doc:name="GET /actuator/health" config-ref="HTTP_Listener_config" path="/actuator/health" allowedMethods="GET"/>
+		<set-payload value='#[{"status": "UP"}]' doc:name="Set Status UP"/>
+	</flow>
+
+</mule>

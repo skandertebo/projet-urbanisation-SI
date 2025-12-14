@@ -12,14 +12,21 @@ NC='\033[0m'
 # Vérifier que les services sont démarrés
 echo -e "${YELLOW}1. Vérification des services...${NC}"
 # Format: name:port:health_endpoint
-services=("patient-core-service:8080:/actuator/health" "billing-service:3000:/health" "cardio-consultation-service:5001:/health" "notification-service:8083:/health")
+services=(
+    "patient-core-service:8080:/actuator/health"
+    "billing-service:3000:/health"
+    "cardio-consultation-service:5001:/health"
+    "notification-service:8083:/health"
+    "esb-central:8081:/actuator/health"
+    "esb-local:8082:/actuator/health"
+)
 all_up=true
 
 for service in "${services[@]}"; do
     name=$(echo $service | cut -d: -f1)
     port=$(echo $service | cut -d: -f2)
     endpoint=$(echo $service | cut -d: -f3)
-    if curl -s -f "http://localhost:$port$endpoint" > /dev/null 2>&1; then
+    if curl -s -f "http://localhost:$port$endpoint" --output /dev/null 2>&1; then
         echo -e "${GREEN}✓${NC} $name"
     else
         echo -e "${RED}✗${NC} $name (non disponible)"
