@@ -37,13 +37,55 @@ services:
       - PATIENT_SERVICE_URL=http://patient-core-service:8080
     depends_on:
       - patient-core-service
+    volumes:
+      - billing-data:/app/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
 
-  # ESB 1 : Central (MuleSoft)
+  # Service 2b : Insurance-Service (Node.js)
+  insurance-service:
+    build:
+      context: ./machine1/insurance-service
+    container_name: insurance-service
+    ports:
+      - "3001:3001"
+    networks:
+      - novacare-network
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+    volumes:
+      - insurance-data:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Service 2c : Pharmacy-Service (Node.js)
+  pharmacy-service:
+    build:
+      context: ./machine1/pharmacy-service
+    container_name: pharmacy-service
+    ports:
+      - "3002:3002"
+    networks:
+      - novacare-network
+    environment:
+      - NODE_ENV=production
+      - PORT=3002
+    volumes:
+      - pharmacy-data:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ESB 1 : Central (Node.js)
   esb-central:
     build:
       context: ./machine1/mule-esb-central
@@ -81,6 +123,7 @@ services:
       - ESB_LOCAL_URL=http://esb-local:8082
     volumes:
       - cardio-data:/app/data
+      - ./machine2/cardio-consultation-service/app.py:/app/app.py:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
       interval: 30s
@@ -98,6 +141,8 @@ services:
       - novacare-network
     volumes:
       - appointments-data:/var/www/html/data
+      - ./machine2/local-appointment-service/index.php:/var/www/html/index.php:ro
+      - ./machine2/local-appointment-service/.htaccess:/var/www/html/.htaccess:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/health"]
       interval: 30s
@@ -120,6 +165,29 @@ services:
       - local-appointment-service
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8082/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Sync Service (Go) - Cron job synchronisation locale → centrale
+  sync-service:
+    build:
+      context: ./machine2/sync-service
+    container_name: sync-service
+    ports:
+      - "8085:8085"
+    networks:
+      - novacare-network
+    environment:
+      - PORT=8085
+      - CARDIO_SERVICE_URL=http://cardio-consultation-service:5000
+      - ESB_CENTRAL_URL=http://esb-central:8081
+      - SYNC_INTERVAL=* * * * *
+    depends_on:
+      - cardio-consultation-service
+      - esb-central
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8085/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -233,6 +301,9 @@ networks:
 
 volumes:
   patient-data:
+  billing-data:
+  insurance-data:
+  pharmacy-data:
   cardio-data:
   appointments-data:
   kong-data:
