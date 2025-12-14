@@ -18,13 +18,20 @@ http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/
 		<http:request-connection host="esb-central" port="8081" />
 	</http:request-config>
 
-	<!-- Route: Check-in (Orchestration) -->
-	<flow name="checkin-flow" >
-		<http:listener doc:name="GET /api/checkin" config-ref="HTTP_Listener_config" path="/api/checkin" allowedMethods="GET"/>
+	<!-- Route: Search Patient (with Auto-Sync) -->
+	<!-- Matches GET /api/patient/search in mock -->
+	<flow name="search-patient-sync-flow" >
+		<http:listener doc:name="GET /api/patient/search" config-ref="HTTP_Listener_config" path="/api/patient/search" allowedMethods="GET">
+			<http:error-response statusCode="#[vars.httpStatus default 500]">
+				<http:body ><![CDATA[#[payload]]]></http:body>
+			</http:error-response>
+		</http:listener>
+
 		<set-variable value="#[attributes.queryParams.cin]" doc:name="Set CIN Variable" variableName="cin"/>
-		<logger level="INFO" doc:name="Log Request" message="ESB Local: Check-in patient - CIN: #[vars.cin]"/>
+		<logger level="INFO" doc:name="Log Request" message="ESB Local: Recherche patient - CIN: #[vars.cin]"/>
 
 		<try doc:name="Try Local Search">
+			<!-- Step 1: Search Locally -->
 			<http:request method="GET" doc:name="Call Local Cardio Service" config-ref="Cardio_Service_Request_Config" path="/api/local_patient/cin/{cin}">
 				<http:uri-params ><![CDATA[#[output application/java
 ---
@@ -35,38 +42,91 @@ http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/
 			<logger level="INFO" doc:name="Log Local Success" message="ESB Local: Patient trouvé localement"/>
 
 			<error-handler >
+				<!-- Step 2: Fallback to Central -->
 				<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue (Not Found Locally)" type="HTTP:NOT_FOUND">
 					<logger level="INFO" doc:name="Log Local Fail" message="ESB Local: Patient non trouvé localement, recherche au siège..."/>
 
 					<!-- Call Central ESB -->
-					<http:request method="GET" doc:name="Call Central ESB" config-ref="Central_ESB_Request_Config" path="/api/patient/search">
-						<http:query-params ><![CDATA[#[output application/java
+					<try doc:name="Try Central Search">
+						<http:request method="GET" doc:name="Call Central ESB" config-ref="Central_ESB_Request_Config" path="/api/patient/search">
+							<http:query-params ><![CDATA[#[output application/java
 ---
 {
 	"cin" : vars.cin
 }]]]></http:query-params>
-					</http:request>
-
-					<!-- Sync to Local -->
-					<logger level="INFO" doc:name="Log Central Success" message="ESB Local: Patient trouvé au siège, synchronisation..."/>
-					<set-variable value="#[payload]" doc:name="Save Patient Data" variableName="patientData"/>
-
-					<try doc:name="Try Sync">
-						<http:request method="POST" doc:name="Sync to Local Cardio Service" config-ref="Cardio_Service_Request_Config" path="/api/local_patient">
-							<http:body ><![CDATA[#[vars.patientData]]]></http:body>
 						</http:request>
-						<logger level="INFO" doc:name="Log Sync Success" message="ESB Local: Patient synchronisé avec succès"/>
-						<error-handler >
-							<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue (Sync Failed)" >
-								<logger level="ERROR" doc:name="Log Sync Error" message="ESB Local: Erreur lors de la synchronisation"/>
+						<error-handler>
+							<on-error-continue type="ANY">
+								<logger level="INFO" message="Patient not found in Central ESB (or error)"/>
+								<set-variable value="404" doc:name="Set 404" variableName="httpStatus"/>
+								<set-payload value='#[{"error": "Patient not found"}]'/>
 							</on-error-continue>
 						</error-handler>
 					</try>
 
-					<set-payload value="#[vars.patientData]" doc:name="Restore Payload"/>
+					<!-- Step 3: Sync to Local (Only if found) -->
+					<choice doc:name="Choice">
+						<when expression="#[vars.httpStatus != 404]">
+							<logger level="INFO" doc:name="Log Central Success" message="ESB Local: Patient trouvé au siège, synchronisation..."/>
+							<set-variable value="#[payload]" doc:name="Save Patient Data" variableName="patientData"/>
+
+							<try doc:name="Try Sync">
+								<http:request method="POST" doc:name="Sync to Local Cardio Service" config-ref="Cardio_Service_Request_Config" path="/api/local_patient">
+									<http:body ><![CDATA[#[vars.patientData]]]></http:body>
+									<http:headers ><![CDATA[#[output application/java
+---
+{
+	"Content-Type" : "application/json"
+}]]]></http:headers>
+								</http:request>
+								<logger level="INFO" doc:name="Log Sync Success" message="ESB Local: Patient synchronisé avec succès"/>
+								<error-handler >
+									<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue (Sync Failed)" >
+										<logger level="ERROR" doc:name="Log Sync Error" message="ESB Local: Erreur lors de la synchronisation"/>
+									</on-error-continue>
+								</error-handler>
+							</try>
+
+							<set-payload value="#[vars.patientData]" doc:name="Restore Payload"/>
+						</when>
+						<otherwise >
+							<logger level="INFO" doc:name="Log Not Found" message="ESB Local: Patient introuvable (Local + Central)"/>
+						</otherwise>
+					</choice>
 				</on-error-continue>
+
+				<!-- Handle other errors -->
+				<on-error-propagate type="ANY">
+					<logger level="ERROR" message="Error in search flow"/>
+				</on-error-propagate>
 			</error-handler>
 		</try>
+	</flow>
+
+	<!-- Route: Sync Patient to Central -->
+	<!-- Matches POST /api/patient/sync-to-central in mock -->
+	<flow name="sync-to-central-flow" >
+		<http:listener doc:name="POST /api/patient/sync-to-central" config-ref="HTTP_Listener_config" path="/api/patient/sync-to-central" allowedMethods="POST">
+			<http:error-response statusCode="#[vars.httpStatus default 500]">
+				<http:body ><![CDATA[#[payload]]]></http:body>
+			</http:error-response>
+		</http:listener>
+
+		<logger level="INFO" doc:name="Log Request" message="ESB Local: Sync vers siège - CIN: #[payload.cin]"/>
+
+		<http:request method="POST" doc:name="Call Central ESB Create" config-ref="Central_ESB_Request_Config" path="/api/patient/create"/>
+
+		<logger level="INFO" doc:name="Log Success" message="ESB Local: Patient créé au siège avec succès"/>
+		<set-payload value='#[output application/json --- {"success": true, "message": "Patient synchronisé avec le siège", "centralId": payload.id, "centralPatient": payload}]'/>
+
+		<error-handler >
+			<!-- Catch 409 Conflict specifically using expression -->
+			<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue (Conflict)" when='#[error.errorMessage.attributes.statusCode == 409]'>
+				<logger level="WARN" doc:name="Log Conflict" message="ESB Local: Patient existe déjà au siège"/>
+				<set-payload value='#[output application/json --- {"success": true, "message": "Patient existe déjà au siège", "alreadyExists": true}]'/>
+				<set-variable value="200" doc:name="Set Status 200" variableName="httpStatus"/>
+			</on-error-continue>
+		</error-handler>
 	</flow>
 
 	<!-- Route: Get Consultations -->

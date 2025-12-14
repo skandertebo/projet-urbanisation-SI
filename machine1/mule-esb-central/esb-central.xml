@@ -20,7 +20,12 @@ http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/
 
 	<!-- Route: Search Patient -->
 	<flow name="search-patient-flow" >
-		<http:listener doc:name="GET /api/patient/search" config-ref="HTTP_Listener_config" path="/api/patient/search" allowedMethods="GET"/>
+		<http:listener doc:name="GET /api/patient/search" config-ref="HTTP_Listener_config" path="/api/patient/search" allowedMethods="GET">
+			<http:response statusCode="#[vars.httpStatus default 200]" />
+			<http:error-response statusCode="#[vars.httpStatus default 500]">
+				<http:body ><![CDATA[#[payload]]]></http:body>
+			</http:error-response>
+		</http:listener>
 		<logger level="INFO" doc:name="Log Request" message="ESB Central: Recherche de patient - CIN: #[attributes.queryParams.cin]"/>
 		<http:request method="GET" doc:name="Call Patient Service" config-ref="Patient_Service_Request_Config" path="/api/patients/cin/{cin}">
 			<http:uri-params ><![CDATA[#[output application/java
@@ -31,10 +36,10 @@ http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/
 		</http:request>
 		<logger level="INFO" doc:name="Log Response" message="ESB Central: Patient trouvé"/>
 		<error-handler >
-			<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" type="HTTP:NOT_FOUND">
+			<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" type="ANY">
 				<set-payload value='#[{"error": "Patient non trouvé"}]' doc:name="Set 404 Payload"/>
 				<set-variable value="404" doc:name="Set HTTP Status" variableName="httpStatus"/>
-			</on-error-propagate>
+			</on-error-continue>
 		</error-handler>
 	</flow>
 

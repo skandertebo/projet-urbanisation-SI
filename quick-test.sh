@@ -44,17 +44,23 @@ echo -e "\n${YELLOW}2. Test Patient-Core-Service${NC}"
 patient=$(curl -s http://localhost:8080/api/patients/1)
 if echo "$patient" | grep -q "Ahmed"; then
     echo -e "${GREEN}✓${NC} Patient trouvé au siège"
-    echo "   Nom: $(echo $patient | grep -o '"firstName":"[^"]*"' | cut -d'"' -f4) $(echo $patient | grep -o '"lastName":"[^"]*"' | cut -d'"' -f4)"
+    name=$(echo "$patient" | node -e "const fs = require('fs'); try { const p = JSON.parse(fs.readFileSync(0)); console.log(p.firstName + ' ' + p.lastName); } catch(e){}")
+    echo "   Nom: $name"
 else
     echo -e "${RED}✗${NC} Patient non trouvé"
 fi
 
 echo -e "\n${YELLOW}3. Test Check-in (Scénario Principal)${NC}"
 cin="12345678"
-checkin=$(curl -s "http://localhost:8082/api/checkin?cin=$cin")
+checkin=$(curl -s -X POST http://localhost:5001/api/checkin \
+  -H "Content-Type: application/json" \
+  -d "{\"cin\": \"$cin\"}")
+
 if echo "$checkin" | grep -q "Ahmed\|Tounsi"; then
     echo -e "${GREEN}✓${NC} Check-in réussi - Patient synchronisé"
 else
+    echo -e "${RED}✗${NC} Erreur Check-in"
+    echo "   Réponse: $checkin"
     echo -e "${YELLOW}⚠${NC} Vérifiez les logs: docker-compose logs esb-local"
 fi
 
@@ -63,6 +69,7 @@ consultation=$(curl -s -X POST http://localhost:5001/api/consultation \
   -H "Content-Type: application/json" \
   -d '{
     "patientId": "1",
+    "patientCin": "12345678",
     "doctorId": "doc1",
     "diagnosis": "Test consultation",
     "acts": [{"code": "TEST", "description": "Test", "price": 100}]
@@ -71,6 +78,7 @@ if echo "$consultation" | grep -q "id"; then
     echo -e "${GREEN}✓${NC} Consultation créée"
 else
     echo -e "${RED}✗${NC} Erreur création consultation"
+    echo "   Réponse: $consultation"
 fi
 
 echo -e "\n${YELLOW}5. Test Facturation${NC}"
@@ -83,10 +91,11 @@ invoice=$(curl -s -X POST http://localhost:3000/api/billing/generate \
   }')
 if echo "$invoice" | grep -q "success.*true"; then
     echo -e "${GREEN}✓${NC} Facture générée"
-    invoice_num=$(echo "$invoice" | grep -o '"invoiceNumber":"[^"]*"' | cut -d'"' -f4)
+    invoice_num=$(echo "$invoice" | node -e "const fs = require('fs'); try { console.log(JSON.parse(fs.readFileSync(0)).invoice.invoiceNumber); } catch(e){}")
     echo "   Numéro: $invoice_num"
 else
     echo -e "${RED}✗${NC} Erreur génération facture"
+    echo "   Réponse: $invoice"
 fi
 
 echo -e "\n${YELLOW}6. Test Notification${NC}"

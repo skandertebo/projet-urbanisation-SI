@@ -23,23 +23,23 @@ run_test() {
     local method=${3:-GET}
     local data=$4
     local expected_code=${5:-200}
-    
+
     echo -e "${YELLOW}► $name${NC}"
-    
+
     if [ "$method" = "POST" ]; then
         response=$(curl -s -w "\n%{http_code}" -X POST "$url" \
-            -H "Content-Type: application/json" \
+            -H "Content-Type: application/json; charset=utf-8" \
             -d "$data" 2>/dev/null)
     else
         response=$(curl -s -w "\n%{http_code}" "$url" 2>/dev/null)
     fi
-    
+
     http_code=$(echo "$response" | tail -n1)
     body=$(echo "$response" | sed '$d')
-    
+
     if [ "$http_code" = "$expected_code" ]; then
         echo -e "${GREEN}  ✓ HTTP $http_code (attendu: $expected_code)${NC}"
-        echo "$body" | jq '.' 2>/dev/null | head -15 || echo "  $body" | head -3
+        echo "$body" | node -e "try { const input = fs.readFileSync(0, 'utf-8'); const json = JSON.parse(input); console.log(JSON.stringify(json, null, 2)); } catch (e) { console.log(input); }" 2>/dev/null | head -15 || echo "  $body" | head -3
         ((TESTS_PASSED++))
     else
         echo -e "${RED}  ✗ HTTP $http_code (attendu: $expected_code)${NC}"
@@ -81,9 +81,11 @@ echo "Flux: Cardio-Service → ESB-Local → (local 404) → ESB-Central → (si
 echo "      → 404 + demande de données pour création"
 echo ""
 
-CHECKIN_UNKNOWN='{
-  "cin": "99999999"
-}'
+# Générer un CIN unique pour A2
+UNKNOWN_CIN="8$(date +%s | tail -c 8)"
+CHECKIN_UNKNOWN="{
+  \"cin\": \"$UNKNOWN_CIN\"
+}"
 
 run_test "A2.1 - Cardio-Service: Check-in patient inconnu (retourne 404 + champs requis)" \
     "http://localhost:5001/api/checkin" "POST" "$CHECKIN_UNKNOWN" "404"
@@ -131,7 +133,7 @@ echo ""
 # --- Récupération de l'ID patient réel ---
 echo -e "${BLUE}--- Récupération de l'ID patient Ahmed Tounsi ---${NC}"
 PATIENT_RESPONSE=$(curl -s "http://localhost:8080/api/patients/cin/12345678")
-PATIENT_ID=$(echo "$PATIENT_RESPONSE" | jq -r '.id')
+PATIENT_ID=$(echo "$PATIENT_RESPONSE" | node -e "const fs = require('fs'); try { const input = fs.readFileSync(0, 'utf-8'); const json = JSON.parse(input); console.log(json.id); } catch (e) { console.error(e); }")
 echo "Patient ID récupéré: $PATIENT_ID"
 echo ""
 
@@ -144,13 +146,13 @@ CONSULTATION="{
   \"patientCin\": \"12345678\",
   \"doctorId\": \"DR-CARDIO-001\",
   \"doctorName\": \"Dr. Karim Mansour\",
-  \"diagnosis\": \"Hypertension artérielle légère - Recommandation suivi régulier\",
-  \"prescription\": [\"Amlodipine 5mg - 1x/jour\", \"Régime hyposodé\"],
-  \"notes\": \"Patient stable, contrôle dans 3 mois\",
+  \"diagnosis\": \"Hypertension arterielle legere - Recommandation suivi regulier\",
+  \"prescription\": [\"Amlodipine 5mg - 1x/jour\", \"Regime hyposode\"],
+  \"notes\": \"Patient stable, controle dans 3 mois\",
   \"acts\": [
-    {\"code\": \"CARD001\", \"description\": \"Consultation cardiologie spécialisée\", \"price\": 150},
-    {\"code\": \"ECG001\", \"description\": \"Électrocardiogramme 12 dérivations\", \"price\": 80},
-    {\"code\": \"ECHO001\", \"description\": \"Échocardiographie transthoracique\", \"price\": 200}
+    {\"code\": \"CARD001\", \"description\": \"Consultation cardiologie specialisee\", \"price\": 150},
+    {\"code\": \"ECG001\", \"description\": \"Electrocardiogramme 12 derivations\", \"price\": 80},
+    {\"code\": \"ECHO001\", \"description\": \"Echocardiographie transthoracique\", \"price\": 200}
   ]
 }"
 
@@ -166,9 +168,9 @@ INVOICE_REQUEST="{
   \"patientName\": \"Ahmed Tounsi\",
   \"consultationId\": \"1\",
   \"acts\": [
-    {\"code\": \"CARD001\", \"description\": \"Consultation cardiologie spécialisée\", \"price\": 150},
-    {\"code\": \"ECG001\", \"description\": \"Électrocardiogramme 12 dérivations\", \"price\": 80},
-    {\"code\": \"ECHO001\", \"description\": \"Échocardiographie transthoracique\", \"price\": 200}
+    {\"code\": \"CARD001\", \"description\": \"Consultation cardiologie specialisee\", \"price\": 150},
+    {\"code\": \"ECG001\", \"description\": \"Electrocardiogramme 12 derivations\", \"price\": 80},
+    {\"code\": \"ECHO001\", \"description\": \"Echocardiographie transthoracique\", \"price\": 200}
   ]
 }"
 
@@ -198,7 +200,7 @@ run_test "B4.1 - ESB Central: Recherche patient" \
 
 ESB_BILLING="{
   \"patientId\": \"$PATIENT_ID\",
-  \"patientName\": \"Ahmed Tounsi\", 
+  \"patientName\": \"Ahmed Tounsi\",
   \"consultationId\": \"2\",
   \"acts\": [
     {\"code\": \"CONS001\", \"description\": \"Consultation de suivi\", \"price\": 80}
