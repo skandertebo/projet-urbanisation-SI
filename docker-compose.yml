@@ -39,8 +39,50 @@ services:
       - PATIENT_SERVICE_URL=http://patient-core-service:8080
     depends_on:
       - patient-core-service
+    volumes:
+      - billing-data:/app/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Service 2b : Insurance-Service (Node.js)
+  insurance-service:
+    build:
+      context: ./machine1/insurance-service
+    container_name: insurance-service
+    ports:
+      - "3001:3001"
+    networks:
+      - novacare-network
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+    volumes:
+      - insurance-data:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Service 2c : Pharmacy-Service (Node.js)
+  pharmacy-service:
+    build:
+      context: ./machine1/pharmacy-service
+    container_name: pharmacy-service
+    ports:
+      - "3002:3002"
+    networks:
+      - novacare-network
+    environment:
+      - NODE_ENV=production
+      - PORT=3002
+    volumes:
+      - pharmacy-data:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3002/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -242,6 +284,9 @@ networks:
 
 volumes:
   patient-data:
+  billing-data:
+  insurance-data:
+  pharmacy-data:
   cardio-data:
   appointments-data:
   kong-data:
