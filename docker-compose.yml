@@ -85,7 +85,7 @@ services:
       timeout: 10s
       retries: 3
 
-  # ESB 1 : Central (Node.js)
+  # ESB 1 : Central (MuleSoft)
   esb-central:
     build:
       context: ./machine1/mule-esb-central
