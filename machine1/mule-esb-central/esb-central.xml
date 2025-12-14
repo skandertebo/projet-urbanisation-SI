@@ -18,6 +18,18 @@ http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/
 		<http:request-connection host="billing-service" port="3000" />
 	</http:request-config>
 
+	<http:request-config name="Insurance_Service_Request_Config" doc:name="HTTP Request configuration" >
+		<http:request-connection host="insurance-service" port="3001" />
+	</http:request-config>
+
+	<http:request-config name="Pharmacy_Service_Request_Config" doc:name="HTTP Request configuration" >
+		<http:request-connection host="pharmacy-service" port="3002" />
+	</http:request-config>
+
+	<http:request-config name="Notification_Service_Request_Config" doc:name="HTTP Request configuration" >
+		<http:request-connection host="notification-service" port="8083" />
+	</http:request-config>
+
 	<!-- Route: Search Patient -->
 	<flow name="search-patient-flow" >
 		<http:listener doc:name="GET /api/patient/search" config-ref="HTTP_Listener_config" path="/api/patient/search" allowedMethods="GET">
@@ -57,6 +69,44 @@ http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/
 		<logger level="INFO" doc:name="Log Request" message="ESB Central: Génération de facture"/>
 		<http:request method="POST" doc:name="Call Billing Service" config-ref="Billing_Service_Request_Config" path="/api/billing/generate"/>
 		<logger level="INFO" doc:name="Log Response" message="ESB Central: Facture générée avec succès"/>
+	</flow>
+
+	<!-- Route: Verify Insurance Coverage -->
+	<flow name="verify-coverage-flow" >
+		<http:listener doc:name="GET /api/insurance/coverage/verify" config-ref="HTTP_Listener_config" path="/api/insurance/coverage/verify" allowedMethods="GET"/>
+		<logger level="INFO" doc:name="Log Request" message="ESB Central: Vérification couverture assurance"/>
+		<http:request method="GET" doc:name="Call Insurance Service" config-ref="Insurance_Service_Request_Config" path="/api/coverage/verify">
+			<http:query-params><![CDATA[#[output application/java
+---
+{
+	"patientCin" : attributes.queryParams.patientCin,
+	"amount" : attributes.queryParams.amount
+}]]]></http:query-params>
+		</http:request>
+		<logger level="INFO" doc:name="Log Response" message="ESB Central: Couverture vérifiée"/>
+	</flow>
+
+	<!-- Route: Get Medications -->
+	<flow name="get-medications-flow" >
+		<http:listener doc:name="GET /api/pharmacy/medications" config-ref="HTTP_Listener_config" path="/api/pharmacy/medications" allowedMethods="GET"/>
+		<logger level="INFO" doc:name="Log Request" message="ESB Central: Recherche médicaments"/>
+		<http:request method="GET" doc:name="Call Pharmacy Service" config-ref="Pharmacy_Service_Request_Config" path="/api/medications">
+			<http:query-params><![CDATA[#[output application/java
+---
+{
+	"search" : attributes.queryParams.search,
+	"category" : attributes.queryParams.category
+}]]]></http:query-params>
+		</http:request>
+		<logger level="INFO" doc:name="Log Response" message="ESB Central: Médicaments récupérés"/>
+	</flow>
+
+	<!-- Route: Send Notification -->
+	<flow name="send-notification-flow" >
+		<http:listener doc:name="POST /api/notifications/send" config-ref="HTTP_Listener_config" path="/api/notifications/send" allowedMethods="POST"/>
+		<logger level="INFO" doc:name="Log Request" message="ESB Central: Envoi notification"/>
+		<http:request method="POST" doc:name="Call Notification Service" config-ref="Notification_Service_Request_Config" path="/api/notifications/send"/>
+		<logger level="INFO" doc:name="Log Response" message="ESB Central: Notification envoyée"/>
 	</flow>
 
 	<!-- Health Check -->

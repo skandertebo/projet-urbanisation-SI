@@ -18,6 +18,10 @@ http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/
 		<http:request-connection host="esb-central" port="8081" />
 	</http:request-config>
 
+	<http:request-config name="Local_Appointment_Service_Request_Config" doc:name="HTTP Request configuration" >
+		<http:request-connection host="local-appointment-service" port="80" />
+	</http:request-config>
+
 	<!-- Route: Search Patient (with Auto-Sync) -->
 	<flow name="search-patient-sync-flow" >
 		<http:listener doc:name="GET /api/patient/search" config-ref="HTTP_Listener_config" path="/api/patient/search" allowedMethods="GET">
@@ -135,6 +139,25 @@ http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/
 	"patientId" : attributes.uriParams.patientId
 }]]]></http:uri-params>
 		</http:request>
+		<logger level="INFO" doc:name="Log Response" message="ESB Local: Consultations récupérées"/>
+	</flow>
+
+	<!-- Route: Get Appointments -->
+	<flow name="get-appointments-flow" >
+		<http:listener doc:name="GET /api/appointments" config-ref="HTTP_Listener_config" path="/api/appointments" allowedMethods="GET"/>
+		<logger level="INFO" doc:name="Log Request" message="ESB Local: Récupération rendez-vous"/>
+		<http:request method="GET" doc:name="Call Local Appointment Service" config-ref="Local_Appointment_Service_Request_Config" path="/api/appointments"/>
+		<logger level="INFO" doc:name="Log Response" message="ESB Local: Rendez-vous récupérés"/>
+	</flow>
+
+	<!-- Route: Create Appointment -->
+	<flow name="create-appointment-flow" >
+		<http:listener doc:name="POST /api/appointments" config-ref="HTTP_Listener_config" path="/api/appointments" allowedMethods="POST">
+			<http:response statusCode="#[attributes.statusCode default 200]" />
+		</http:listener>
+		<logger level="INFO" doc:name="Log Request" message="ESB Local: Création rendez-vous"/>
+		<http:request method="POST" doc:name="Call Local Appointment Service" config-ref="Local_Appointment_Service_Request_Config" path="/api/appointments"/>
+		<logger level="INFO" doc:name="Log Response" message="ESB Local: Rendez-vous créé"/>
 	</flow>
 
 	<!-- Health Check -->

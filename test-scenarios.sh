@@ -211,6 +211,61 @@ run_test "B4.2 - ESB Central: Facturation via médiation" \
     "http://localhost:8081/api/billing/generate" "POST" "$ESB_BILLING"
 
 # ═══════════════════════════════════════════════════════════════════════
+# PROCESSUS C : SERVICES ANNEXES (ASSURANCE, PHARMACIE, RDV)
+# ═══════════════════════════════════════════════════════════════════════
+echo -e "${BLUE}══════════════════════════════════════════════════════════════════${NC}"
+echo -e "${BLUE}  PROCESSUS C : SERVICES ANNEXES (ASSURANCE, PHARMACIE, RDV)      ${NC}"
+echo -e "${BLUE}══════════════════════════════════════════════════════════════════${NC}"
+echo ""
+
+# --- Scénario C1: Vérification Assurance via ESB Central ---
+echo -e "${BLUE}--- Scénario C1: Vérification Assurance via ESB Central ---${NC}"
+echo ""
+
+run_test "C1.1 - ESB Central: Vérifier couverture (Ahmed Tounsi)" \
+    "http://localhost:8081/api/insurance/coverage/verify?patientCin=12345678&amount=150"
+
+# --- Scénario C2: Pharmacie via ESB Central ---
+echo -e "${BLUE}--- Scénario C2: Pharmacie via ESB Central ---${NC}"
+echo ""
+
+run_test "C2.1 - ESB Central: Recherche médicament (Paracétamol)" \
+    "http://localhost:8081/api/pharmacy/medications?search=Paracétamol"
+
+# --- Scénario C3: Notification via ESB Central ---
+echo -e "${BLUE}--- Scénario C3: Notification via ESB Central ---${NC}"
+echo ""
+
+ESB_NOTIFICATION='{
+  "to": "ahmed.tounsi@example.com",
+  "subject": "Rappel RDV",
+  "body": "N oubliez pas votre rendez-vous demain.",
+  "type": "sms"
+}'
+
+run_test "C3.1 - ESB Central: Envoyer notification" \
+    "http://localhost:8081/api/notifications/send" "POST" "$ESB_NOTIFICATION"
+
+# --- Scénario C4: Gestion RDV via ESB Local ---
+echo -e "${BLUE}--- Scénario C4: Gestion RDV via ESB Local ---${NC}"
+echo ""
+
+APPOINTMENT='{
+  "patientCin": "12345678",
+  "patientName": "Ahmed Tounsi",
+  "doctorName": "Dr. Amine Ben Ali",
+  "date": "2025-01-15",
+  "time": "10:00",
+  "reason": "Consultation de routine"
+}'
+
+run_test "C4.1 - ESB Local: Créer rendez-vous" \
+    "http://localhost:8082/api/appointments" "POST" "$APPOINTMENT" "201"
+
+run_test "C4.2 - ESB Local: Lister rendez-vous" \
+    "http://localhost:8082/api/appointments"
+
+# ═══════════════════════════════════════════════════════════════════════
 # RÉSUMÉ DES TESTS
 # ═══════════════════════════════════════════════════════════════════════
 echo ""

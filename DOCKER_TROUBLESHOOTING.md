@@ -46,8 +46,6 @@ curl -s https://registry.hub.docker.com/v2/repositories/library/node/tags?page_s
 
 Si vous devez changer l'image, modifiez ces fichiers :
 - `machine1/patient-core-service/Dockerfile`
-- `machine1/esb-central/Dockerfile`
-- `machine2/esb-local/Dockerfile`
 
 ### Test rapide
 
