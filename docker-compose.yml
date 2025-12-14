@@ -1,10 +1,8 @@
-version: '3.8'
-
 services:
   # ============================================
   # MACHINE 1 : SIÈGE (Hannibal - HQ)
   # ============================================
-  
+
   # Service 1 : Patient-Core-Service (Node.js)
   patient-core-service:
     build:
@@ -90,17 +88,14 @@ services:
   # ESB 1 : Central (Node.js)
   esb-central:
     build:
-      context: ./machine1/esb-central
+      context: ./machine1/mule-esb-central
     container_name: esb-central
     ports:
       - "8081:8081"
     networks:
       - novacare-network
     environment:
-      - NODE_ENV=production
-      - PORT=8081
-      - PATIENT_SERVICE_URL=http://patient-core-service:8080
-      - BILLING_SERVICE_URL=http://billing-service:3000
+      - MULE_ENV=production
     depends_on:
       - patient-core-service
       - billing-service
@@ -154,21 +149,17 @@ services:
       timeout: 10s
       retries: 3
 
-  # ESB 2 : Local (Node.js)
+  # ESB 2 : Local (MuleSoft)
   esb-local:
     build:
-      context: ./machine2/esb-local
+      context: ./machine2/mule-esb-local
     container_name: esb-local
     ports:
       - "8082:8082"
     networks:
       - novacare-network
     environment:
-      - NODE_ENV=production
-      - PORT=8082
-      - CARDIO_SERVICE_URL=http://cardio-consultation-service:5000
-      - APPOINTMENT_SERVICE_URL=http://local-appointment-service:80
-      - ESB_CENTRAL_URL=http://esb-central:8081
+      - MULE_ENV=production
     depends_on:
       - cardio-consultation-service
       - local-appointment-service

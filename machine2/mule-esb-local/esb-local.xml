@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" >
+		<http:listener-connection host="0.0.0.0" port="8082" />
+	</http:listener-config>
+
+	<http:request-config name="Cardio_Service_Request_Config" doc:name="HTTP Request configuration" >
+		<http:request-connection host="cardio-consultation-service" port="5000" />
+	</http:request-config>
+
+	<http:request-config name="Central_ESB_Request_Config" doc:name="HTTP Request configuration" >
+		<http:request-connection host="esb-central" port="8081" />
+	</http:request-config>
+
+	<!-- Route: Search Patient (with Auto-Sync) -->
+	<flow name="search-patient-sync-flow" >
+		<http:listener doc:name="GET /api/patient/search" config-ref="HTTP_Listener_config" path="/api/patient/search" allowedMethods="GET">
+			<http:response statusCode="#[vars.httpStatus default 200]">
+				<http:headers><![CDATA[#[output application/java --- {"Content-Type": "application/json"}]]]></http:headers>
+			</http:response>
+			<http:error-response statusCode="#[vars.httpStatus default 500]">
+				<http:body><![CDATA[#[output application/json --- payload]]]></http:body>
+				<http:headers><![CDATA[#[output application/java --- {"Content-Type": "application/json"}]]]></http:headers>
+			</http:error-response>
+		</http:listener>
+
+		<set-variable value="#[attributes.queryParams.cin]" doc:name="Set CIN" variableName="cin"/>
+		<set-variable value="notfound" doc:name="Init Status" variableName="patientStatus"/>
+		<logger level="INFO" message="ESB Local: Recherche patient CIN: #[vars.cin]"/>
+
+		<!-- Step 1: Try Local -->
+		<try>
+			<http:request method="GET" config-ref="Cardio_Service_Request_Config" path="/api/local_patient/cin/{cin}">
+				<http:uri-params><![CDATA[#[output application/java --- {"cin": vars.cin}]]]></http:uri-params>
+			</http:request>
+			<set-variable value="found" variableName="patientStatus"/>
+			<logger level="INFO" message="ESB Local: Patient trouvé localement"/>
+			<error-handler>
+				<on-error-continue type="HTTP:NOT_FOUND">
+					<logger level="INFO" message="ESB Local: Non trouvé localement"/>
+				</on-error-continue>
+			</error-handler>
+		</try>
+
+		<!-- Step 2: If not found locally, try Central -->
+		<choice>
+			<when expression="#[vars.patientStatus == 'notfound']">
+				<try>
+					<http:request method="GET" config-ref="Central_ESB_Request_Config" path="/api/patient/search">
+						<http:query-params><![CDATA[#[output application/java --- {"cin": vars.cin}]]]></http:query-params>
+					</http:request>
+					<set-variable value="found" variableName="patientStatus"/>
+					<set-variable value="#[payload]" variableName="patientData"/>
+					<logger level="INFO" message="ESB Local: Patient trouvé au siège, sync..."/>
+
+					<!-- Sync to local -->
+					<try>
+						<http:request method="POST" config-ref="Cardio_Service_Request_Config" path="/api/local_patient">
+							<http:body><![CDATA[#[vars.patientData]]]></http:body>
+							<http:headers><![CDATA[#[output application/java --- {"Content-Type": "application/json"}]]]></http:headers>
+						</http:request>
+						<error-handler>
+							<on-error-continue type="ANY">
+								<logger level="WARN" message="ESB Local: Sync échouée"/>
+							</on-error-continue>
+						</error-handler>
+					</try>
+					<set-payload value="#[vars.patientData]"/>
+
+					<error-handler>
+						<on-error-continue type="ANY">
+							<logger level="INFO" message="ESB Local: Non trouvé au siège"/>
+						</on-error-continue>
+					</error-handler>
+				</try>
+			</when>
+		</choice>
+
+		<!-- Step 3: Return 404 if still not found -->
+		<choice>
+			<when expression="#[vars.patientStatus == 'notfound']">
+				<set-variable value="404" variableName="httpStatus"/>
+				<set-payload value='#[output application/json --- {"error": "Patient not found", "requiresCreation": true, "missingFields": ["firstName", "lastName", "dateOfBirth"]}]'/>
+				<raise-error type="APP:NOT_FOUND" description="Patient not found"/>
+			</when>
+		</choice>
+
+		<error-handler>
+			<on-error-propagate type="APP:NOT_FOUND">
+				<set-variable value="404" variableName="httpStatus"/>
+			</on-error-propagate>
+		</error-handler>
+	</flow>
+
+	<!-- Route: Sync Patient to Central -->
+	<!-- Matches POST /api/patient/sync-to-central in mock -->
+	<flow name="sync-to-central-flow" >
+		<http:listener doc:name="POST /api/patient/sync-to-central" config-ref="HTTP_Listener_config" path="/api/patient/sync-to-central" allowedMethods="POST">
+			<http:error-response statusCode="#[vars.httpStatus default 500]">
+				<http:body ><![CDATA[#[payload]]]></http:body>
+			</http:error-response>
+		</http:listener>
+
+		<logger level="INFO" doc:name="Log Request" message="ESB Local: Sync vers siège - CIN: #[payload.cin]"/>
+
+		<http:request method="POST" doc:name="Call Central ESB Create" config-ref="Central_ESB_Request_Config" path="/api/patient/create"/>
+
+		<logger level="INFO" doc:name="Log Success" message="ESB Local: Patient créé au siège avec succès"/>
+		<set-payload value='#[output application/json --- {"success": true, "message": "Patient synchronisé avec le siège", "centralId": payload.id, "centralPatient": payload}]'/>
+
+		<error-handler >
+			<!-- Catch 409 Conflict specifically using expression -->
+			<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue (Conflict)" when='#[error.errorMessage.attributes.statusCode == 409]'>
+				<logger level="WARN" doc:name="Log Conflict" message="ESB Local: Patient existe déjà au siège"/>
+				<set-payload value='#[output application/json --- {"success": true, "message": "Patient existe déjà au siège", "alreadyExists": true}]'/>
+				<set-variable value="200" doc:name="Set Status 200" variableName="httpStatus"/>
+			</on-error-continue>
+		</error-handler>
+	</flow>
+
+	<!-- Route: Get Consultations -->
+	<flow name="get-consultations-flow" >
+		<http:listener doc:name="GET /api/consultation/patient/{patientId}" config-ref="HTTP_Listener_config" path="/api/consultation/patient/{patientId}" allowedMethods="GET"/>
+		<logger level="INFO" doc:name="Log Request" message="ESB Local: Récupération consultations"/>
+		<http:request method="GET" doc:name="Call Cardio Service" config-ref="Cardio_Service_Request_Config" path="/api/consultation/patient/{patientId}">
+			<http:uri-params ><![CDATA[#[output application/java
+---
+{
+	"patientId" : attributes.uriParams.patientId
+}]]]></http:uri-params>
+		</http:request>
+	</flow>
+
+	<!-- Health Check -->
+	<flow name="health-check-flow">
+		<http:listener doc:name="GET /actuator/health" config-ref="HTTP_Listener_config" path="/actuator/health" allowedMethods="GET"/>
+		<set-payload value='#[{"status": "UP"}]' doc:name="Set Status UP"/>
+	</flow>
+
+</mule>

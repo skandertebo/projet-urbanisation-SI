@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" >
+		<http:listener-connection host="0.0.0.0" port="8081" />
+	</http:listener-config>
+
+	<http:request-config name="Patient_Service_Request_Config" doc:name="HTTP Request configuration" >
+		<http:request-connection host="patient-core-service" port="8080" />
+	</http:request-config>
+
+	<http:request-config name="Billing_Service_Request_Config" doc:name="HTTP Request configuration" >
+		<http:request-connection host="billing-service" port="3000" />
+	</http:request-config>
+
+	<!-- Route: Search Patient -->
+	<flow name="search-patient-flow" >
+		<http:listener doc:name="GET /api/patient/search" config-ref="HTTP_Listener_config" path="/api/patient/search" allowedMethods="GET">
+			<http:response statusCode="#[vars.httpStatus default 200]" />
+			<http:error-response statusCode="#[vars.httpStatus default 500]">
+				<http:body ><![CDATA[#[payload]]]></http:body>
+			</http:error-response>
+		</http:listener>
+		<logger level="INFO" doc:name="Log Request" message="ESB Central: Recherche de patient - CIN: #[attributes.queryParams.cin]"/>
+		<http:request method="GET" doc:name="Call Patient Service" config-ref="Patient_Service_Request_Config" path="/api/patients/cin/{cin}">
+			<http:uri-params ><![CDATA[#[output application/java
+---
+{
+	"cin" : attributes.queryParams.cin
+}]]]></http:uri-params>
+		</http:request>
+		<logger level="INFO" doc:name="Log Response" message="ESB Central: Patient trouvé"/>
+		<error-handler >
+			<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" type="ANY">
+				<set-payload value='#[{"error": "Patient non trouvé"}]' doc:name="Set 404 Payload"/>
+				<set-variable value="404" doc:name="Set HTTP Status" variableName="httpStatus"/>
+			</on-error-continue>
+		</error-handler>
+	</flow>
+
+	<!-- Route: Create Patient -->
+	<flow name="create-patient-flow" >
+		<http:listener doc:name="POST /api/patient/create" config-ref="HTTP_Listener_config" path="/api/patient/create" allowedMethods="POST"/>
+		<logger level="INFO" doc:name="Log Request" message="ESB Central: Création de patient"/>
+		<http:request method="POST" doc:name="Call Patient Service" config-ref="Patient_Service_Request_Config" path="/api/patients"/>
+		<logger level="INFO" doc:name="Log Response" message="ESB Central: Patient créé avec succès"/>
+	</flow>
+
+	<!-- Route: Generate Invoice -->
+	<flow name="generate-invoice-flow" >
+		<http:listener doc:name="POST /api/billing/generate" config-ref="HTTP_Listener_config" path="/api/billing/generate" allowedMethods="POST"/>
+		<logger level="INFO" doc:name="Log Request" message="ESB Central: Génération de facture"/>
+		<http:request method="POST" doc:name="Call Billing Service" config-ref="Billing_Service_Request_Config" path="/api/billing/generate"/>
+		<logger level="INFO" doc:name="Log Response" message="ESB Central: Facture générée avec succès"/>
+	</flow>
+
+	<!-- Health Check -->
+	<flow name="health-check-flow">
+		<http:listener doc:name="GET /actuator/health" config-ref="HTTP_Listener_config" path="/actuator/health" allowedMethods="GET"/>
+		<set-payload value='#[{"status": "UP"}]' doc:name="Set Status UP"/>
+	</flow>
+
+</mule>
