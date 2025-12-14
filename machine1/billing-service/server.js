@@ -7,7 +7,7 @@ const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const PATIENT_SERVICE_URL = process.env.PATIENT_SERVICE_URL || 'http://localhost:8080';
+const PATIENT_SERVICE_URL = process.env.PATIENT_SERVICE_URL || 'http://patient-core-service:8080';
 
 app.use(express.json());
 

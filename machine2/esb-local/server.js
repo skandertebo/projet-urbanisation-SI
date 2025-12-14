@@ -1,6 +1,6 @@
-const express = require('express');
-const axios = require('axios');
-const bodyParser = require('body-parser');
+const express = require("express");
+const axios = require("axios");
+const bodyParser = require("body-parser");
 
 const app = express();
 const PORT = process.env.PORT || 8082;
@@ -10,94 +10,180 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
 // Service URLs from environment or defaults
-const CARDIO_SERVICE_URL = process.env.CARDIO_SERVICE_URL || 'http://cardio-consultation-service:5000';
-const ESB_CENTRAL_URL = process.env.ESB_CENTRAL_URL || 'http://esb-central:8081';
+const CARDIO_SERVICE_URL =
+  process.env.CARDIO_SERVICE_URL || "http://cardio-consultation-service:5000";
+const ESB_CENTRAL_URL =
+  process.env.ESB_CENTRAL_URL || "http://esb-central:8081";
 
-// Health check
-app.get('/actuator/health', (req, res) => {
-  res.json({ status: 'UP' });
-});
-
-// Route: Patient check-in (admission patient)
-// Implements: local search -> if not found -> central search -> synchronization
-app.get('/api/checkin', async (req, res) => {
+// ============================================
+// ENDPOINT: RECHERCHE PATIENT (avec sync automatique)
+// ============================================
+app.get("/api/patient/search", async (req, res) => {
   const { cin } = req.query;
-  
+
   if (!cin) {
-    return res.status(400).json({ error: 'CIN parameter is required' });
+    return res.status(400).json({ error: "CIN parameter is required" });
   }
-  
+
+  console.log(`[ESB-LOCAL] Recherche patient - CIN: ${cin}`);
+
+  // Étape 1: Rechercher localement
   try {
-    console.log(`ESB Local: Check-in patient - CIN: ${cin}`);
-    
-    // Step 1: Search locally
-    try {
-      const localResponse = await axios.get(`${CARDIO_SERVICE_URL}/api/local_patient/cin/${cin}`);
-      console.log('ESB Local: Patient trouvé localement');
-      return res.json(localResponse.data);
-    } catch (localError) {
-      if (localError.response && localError.response.status === 404) {
-        console.log('ESB Local: Patient non trouvé localement, recherche au siège...');
-        
-        // Step 2: Search at central (siège)
+    console.log("[ESB-LOCAL] Étape 1: Recherche locale...");
+    const localResponse = await axios.get(
+      `${CARDIO_SERVICE_URL}/api/local_patient/cin/${cin}`
+    );
+    console.log("[ESB-LOCAL] Patient trouvé localement");
+    return res.json(localResponse.data);
+  } catch (localError) {
+    if (localError.response && localError.response.status === 404) {
+      console.log(
+        "[ESB-LOCAL] Patient non trouvé localement, recherche au siège..."
+      );
+
+      // Étape 2: Rechercher au siège via ESB-Central
+      try {
+        console.log("[ESB-LOCAL] Étape 2: Appel ESB-Central...");
+        const centralResponse = await axios.get(
+          `${ESB_CENTRAL_URL}/api/patient/search`,
+          {
+            params: { cin },
+          }
+        );
+
+        console.log(
+          "[ESB-LOCAL] Patient trouvé au siège, synchronisation locale..."
+        );
+        const patientFromCentral = centralResponse.data;
+
+        // Étape 3: Synchroniser vers la base locale
         try {
-          const centralResponse = await axios.get(`${ESB_CENTRAL_URL}/api/patient/search?cin=${cin}`);
-          console.log('ESB Local: Patient trouvé au siège, synchronisation...');
-          
-          // Step 3: Synchronize to local database
-          try {
-            await axios.post(`${CARDIO_SERVICE_URL}/api/local_patient`, centralResponse.data);
-            console.log('ESB Local: Patient synchronisé avec succès');
-            return res.json(centralResponse.data);
-          } catch (syncError) {
-            console.error('ESB Local: Erreur lors de la synchronisation:', syncError.message);
-            // Return patient data even if sync fails
-            return res.json(centralResponse.data);
-          }
-        } catch (centralError) {
-          if (centralError.response && centralError.response.status === 404) {
-            console.log('ESB Local: Patient non trouvé nulle part');
-            return res.status(404).json({ error: 'Patient non trouvé' });
-          } else {
-            console.error('ESB Local: Erreur lors de la recherche au siège:', centralError.message);
-            return res.status(500).json({ error: 'Erreur lors de la recherche au siège' });
-          }
+          await axios.post(
+            `${CARDIO_SERVICE_URL}/api/local_patient`,
+            patientFromCentral
+          );
+          console.log("[ESB-LOCAL] Patient synchronisé localement avec succès");
+        } catch (syncError) {
+          console.error("[ESB-LOCAL] Erreur sync locale:", syncError.message);
+          // On retourne quand même le patient même si la sync locale échoue
         }
-      } else {
-        console.error('ESB Local: Erreur lors de la recherche locale:', localError.message);
-        return res.status(500).json({ error: 'Erreur lors de la recherche locale' });
+
+        return res.json(patientFromCentral);
+      } catch (centralError) {
+        if (centralError.response && centralError.response.status === 404) {
+          console.log("[ESB-LOCAL] Patient non trouvé au siège non plus");
+          return res.status(404).json({ error: "Patient non trouvé" });
+        } else {
+          console.error(
+            "[ESB-LOCAL] Erreur ESB-Central:",
+            centralError.message
+          );
+          return res
+            .status(500)
+            .json({ error: "Erreur communication avec le siège" });
+        }
       }
+    } else {
+      console.error("[ESB-LOCAL] Erreur recherche locale:", localError.message);
+      return res.status(500).json({ error: "Erreur recherche locale" });
     }
-  } catch (error) {
-    console.error('ESB Local: Erreur inattendue:', error.message);
-    res.status(500).json({ error: 'Erreur inattendue' });
   }
 });
 
-// Route: Get consultations for a patient
-app.get('/api/consultation/patient/:patientId', async (req, res) => {
-  const { patientId } = req.params;
-  
+// ============================================
+// ENDPOINT: SYNC PATIENT VERS LE SIÈGE
+// ============================================
+app.post("/api/patient/sync-to-central", async (req, res) => {
+  const patientData = req.body;
+
+  if (!patientData || !patientData.cin) {
+    return res.status(400).json({ error: "Patient data with CIN is required" });
+  }
+
+  console.log(
+    `[ESB-LOCAL] Synchronisation patient vers siège - CIN: ${patientData.cin}`
+  );
+
   try {
-    console.log(`ESB Local: Récupération consultations pour patient ${patientId}`);
-    const response = await axios.get(`${CARDIO_SERVICE_URL}/api/consultation/patient/${patientId}`);
-    console.log('ESB Local: Consultations récupérées');
-    res.json(response.data);
+    // Appeler ESB-Central pour créer le patient au siège
+    const response = await axios.post(`${ESB_CENTRAL_URL}/api/patient/create`, {
+      cin: patientData.cin,
+      firstName: patientData.firstName,
+      lastName: patientData.lastName,
+      dateOfBirth: patientData.dateOfBirth,
+      email: patientData.email,
+      phone: patientData.phone,
+      address: patientData.address,
+      allergies: patientData.allergies,
+      medicalHistory: patientData.medicalHistory,
+    });
+
+    console.log("[ESB-LOCAL] Patient créé au siège avec succès");
+    return res.status(201).json({
+      success: true,
+      message: "Patient synchronisé avec le siège",
+      centralId: response.data.id,
+      centralPatient: response.data,
+    });
+  } catch (error) {
+    if (error.response) {
+      if (error.response.status === 409) {
+        // Patient existe déjà au siège
+        console.log("[ESB-LOCAL] Patient existe déjà au siège");
+        return res.json({
+          success: true,
+          message: "Patient existe déjà au siège",
+          alreadyExists: true,
+        });
+      }
+      console.error("[ESB-LOCAL] Erreur création siège:", error.response.data);
+      return res.status(error.response.status).json(error.response.data);
+    }
+    console.error("[ESB-LOCAL] Erreur sync vers siège:", error.message);
+    return res.status(500).json({ error: "Erreur synchronisation vers siège" });
+  }
+});
+
+// ============================================
+// ENDPOINT: RÉCUPÉRER CONSULTATIONS
+// ============================================
+app.get("/api/consultation/patient/:patientId", async (req, res) => {
+  const { patientId } = req.params;
+
+  try {
+    console.log(
+      `[ESB-LOCAL] Récupération consultations pour patient ${patientId}`
+    );
+    const response = await axios.get(
+      `${CARDIO_SERVICE_URL}/api/consultation/patient/${patientId}`
+    );
+    return res.json(response.data);
   } catch (error) {
     if (error.response && error.response.status === 404) {
-      res.status(404).json({ error: 'Consultations non trouvées' });
-    } else {
-      console.error('ESB Local: Erreur lors de la récupération:', error.message);
-      res.status(500).json({ error: 'Erreur lors de la récupération des consultations' });
+      return res.status(404).json({ error: "Consultations non trouvées" });
     }
+    console.error(
+      "[ESB-LOCAL] Erreur récupération consultations:",
+      error.message
+    );
+    return res.status(500).json({ error: "Erreur récupération consultations" });
   }
+});
+
+// ============================================
+// HEALTH CHECK
+// ============================================
+app.get("/actuator/health", (req, res) => {
+  res.json({ status: "UP", service: "esb-local" });
+});
+
+app.get("/health", (req, res) => {
+  res.json({ status: "UP", service: "esb-local" });
 });
 
 // Start server
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`ESB Local running on port ${PORT}`);
-  console.log(`Cardio Service URL: ${CARDIO_SERVICE_URL}`);
-  console.log(`ESB Central URL: ${ESB_CENTRAL_URL}`);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`[ESB-LOCAL] Running on port ${PORT}`);
+  console.log(`[ESB-LOCAL] Cardio Service URL: ${CARDIO_SERVICE_URL}`);
+  console.log(`[ESB-LOCAL] ESB Central URL: ${ESB_CENTRAL_URL}`);
 });
-
-

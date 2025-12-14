@@ -1,98 +1,233 @@
 #!/bin/bash
 
-echo "=== Tests des Scénarios NovaCare POC ==="
+echo "╔════════════════════════════════════════════════════════════════╗"
+echo "║         NovaCare POC - Tests des Scénarios Métier              ║"
+echo "╚════════════════════════════════════════════════════════════════╝"
 echo ""
 
-# Couleurs pour l'affichage
+# Couleurs
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+BLUE='\033[0;34m'
+NC='\033[0m'
 
-# Fonction pour tester un endpoint
-test_endpoint() {
+# Compteurs
+TESTS_PASSED=0
+TESTS_FAILED=0
+
+# Fonction de test
+run_test() {
     local name=$1
     local url=$2
     local method=${3:-GET}
     local data=$4
+    local expected_code=${5:-200}
     
-    echo -e "${YELLOW}Test: $name${NC}"
+    echo -e "${YELLOW}► $name${NC}"
+    
     if [ "$method" = "POST" ]; then
         response=$(curl -s -w "\n%{http_code}" -X POST "$url" \
             -H "Content-Type: application/json" \
-            -d "$data")
+            -d "$data" 2>/dev/null)
     else
-        response=$(curl -s -w "\n%{http_code}" "$url")
+        response=$(curl -s -w "\n%{http_code}" "$url" 2>/dev/null)
     fi
     
     http_code=$(echo "$response" | tail -n1)
     body=$(echo "$response" | sed '$d')
     
-    if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
-        echo -e "${GREEN}✓ Succès (HTTP $http_code)${NC}"
-        echo "$body" | jq '.' 2>/dev/null || echo "$body"
+    if [ "$http_code" = "$expected_code" ]; then
+        echo -e "${GREEN}  ✓ HTTP $http_code (attendu: $expected_code)${NC}"
+        echo "$body" | jq '.' 2>/dev/null | head -15 || echo "  $body" | head -3
+        ((TESTS_PASSED++))
     else
-        echo -e "${RED}✗ Échec (HTTP $http_code)${NC}"
-        echo "$body"
+        echo -e "${RED}  ✗ HTTP $http_code (attendu: $expected_code)${NC}"
+        echo "  $body"
+        ((TESTS_FAILED++))
     fi
     echo ""
 }
 
-# Attendre que les services soient prêts
-echo "Attente du démarrage des services..."
-sleep 10
+# ═══════════════════════════════════════════════════════════════════════
+# PROCESSUS A : ADMISSION PATIENT & SYNCHRONISATION
+# ═══════════════════════════════════════════════════════════════════════
+echo -e "${BLUE}══════════════════════════════════════════════════════════════════${NC}"
+echo -e "${BLUE}  PROCESSUS A : ADMISSION PATIENT (CHECK-IN)                      ${NC}"
+echo -e "${BLUE}══════════════════════════════════════════════════════════════════${NC}"
+echo ""
 
-# Test 1: Health checks
-echo "=== Health Checks ==="
-test_endpoint "Patient-Core-Service" "http://localhost:8080/actuator/health"
-test_endpoint "Billing-Service" "http://localhost:3000/health"
-test_endpoint "Cardio-Consultation-Service" "http://localhost:5001/health"
-test_endpoint "Notification-Service" "http://localhost:8083/health"
+# --- Scénario A1: Patient existant au siège ---
+echo -e "${BLUE}--- Scénario A1: Check-in patient existant au siège (CIN: 12345678) ---${NC}"
+echo ""
+echo "Flux: Cardio-Service → ESB-Local → (local 404) → ESB-Central → Patient-Core"
+echo "      → Patient trouvé → Sync locale → Retour patient"
+echo ""
 
-# Test 2: Récupérer un patient existant
-echo "=== Test 2: Récupérer un patient existant ==="
-test_endpoint "Patient par ID" "http://localhost:8080/api/patients/1"
-
-# Test 3: Check-in Patient (Scénario Principal)
-echo "=== Test 3: Check-in Patient (Scénario Principal) ==="
-test_endpoint "Check-in par CIN" "http://localhost:8082/api/checkin?cin=12345678"
-
-# Test 4: Créer une consultation
-echo "=== Test 4: Créer une consultation cardiaque ==="
-consultation_data='{
-  "patientId": "1",
-  "doctorId": "doc1",
-  "diagnosis": "Examen cardiaque de routine",
-  "prescription": ["Aspirine 100mg"],
-  "acts": [
-    {"code": "CARD001", "description": "Consultation cardiologie", "price": 150},
-    {"code": "ECG001", "description": "Électrocardiogramme", "price": 80}
-  ]
+CHECKIN_EXISTING='{
+  "cin": "12345678"
 }'
-test_endpoint "Créer consultation" "http://localhost:5001/api/consultation" "POST" "$consultation_data"
 
-# Test 5: Générer une facture
-echo "=== Test 5: Générer une facture ==="
-billing_data='{
-  "patientId": "1",
-  "consultationId": "1",
-  "acts": [
-    {"code": "CARD001", "description": "Consultation cardiologie", "price": 150},
-    {"code": "ECG001", "description": "Électrocardiogramme", "price": 80}
-  ]
+run_test "A1.1 - Cardio-Service: Check-in patient existant" \
+    "http://localhost:5001/api/checkin" "POST" "$CHECKIN_EXISTING"
+
+run_test "A1.2 - Vérification: Patient synchronisé localement" \
+    "http://localhost:5001/api/local_patient/cin/12345678"
+
+# --- Scénario A2: Patient inconnu partout ---
+echo -e "${BLUE}--- Scénario A2: Check-in patient inconnu (CIN seul) ---${NC}"
+echo ""
+echo "Flux: Cardio-Service → ESB-Local → (local 404) → ESB-Central → (siège 404)"
+echo "      → 404 + demande de données pour création"
+echo ""
+
+CHECKIN_UNKNOWN='{
+  "cin": "99999999"
 }'
-test_endpoint "Générer facture" "http://localhost:3000/api/billing/generate" "POST" "$billing_data"
 
-# Test 6: Envoyer une notification
-echo "=== Test 6: Envoyer une notification ==="
-notification_data='{
-  "to": "patient@example.com",
-  "subject": "Votre facture NovaCare",
-  "body": "Votre facture est prête. Merci de votre visite.",
+run_test "A2.1 - Cardio-Service: Check-in patient inconnu (retourne 404 + champs requis)" \
+    "http://localhost:5001/api/checkin" "POST" "$CHECKIN_UNKNOWN" "404"
+
+# --- Scénario A3: Nouveau patient - Création complète ---
+echo -e "${BLUE}--- Scénario A3: Check-in nouveau patient (création + sync vers siège) ---${NC}"
+echo ""
+echo "Flux: Cardio-Service → ESB-Local → (local 404) → ESB-Central → (siège 404)"
+echo "      → Création locale → Sync vers siège via ESB → Patient check-in"
+echo ""
+
+# Générer un CIN unique
+UNIQUE_CIN="9$(date +%s | tail -c 8)"
+echo "CIN généré pour le test: $UNIQUE_CIN"
+
+NEW_PATIENT_CHECKIN="{
+  \"cin\": \"$UNIQUE_CIN\",
+  \"firstName\": \"Sami\",
+  \"lastName\": \"Trabelsi\",
+  \"dateOfBirth\": \"1995-03-22\",
+  \"email\": \"sami.trabelsi@example.com\",
+  \"phone\": \"+216 99 999 999\",
+  \"address\": \"Monastir, Tunisie\",
+  \"allergies\": [\"Latex\"],
+  \"medicalHistory\": [\"Migraines\"]
+}"
+
+run_test "A3.1 - Cardio-Service: Check-in nouveau patient (création + sync)" \
+    "http://localhost:5001/api/checkin" "POST" "$NEW_PATIENT_CHECKIN" "201"
+
+run_test "A3.2 - Vérification: Patient existe localement" \
+    "http://localhost:5001/api/local_patient/cin/$UNIQUE_CIN"
+
+run_test "A3.3 - Vérification: Patient synchronisé au siège" \
+    "http://localhost:8080/api/patients/cin/$UNIQUE_CIN"
+
+# ═══════════════════════════════════════════════════════════════════════
+# PROCESSUS B : PARCOURS SOIN VERS FACTURATION
+# ═══════════════════════════════════════════════════════════════════════
+echo -e "${BLUE}══════════════════════════════════════════════════════════════════${NC}"
+echo -e "${BLUE}  PROCESSUS B : PARCOURS SOIN VERS FACTURATION                   ${NC}"
+echo -e "${BLUE}══════════════════════════════════════════════════════════════════${NC}"
+echo ""
+
+# --- Récupération de l'ID patient réel ---
+echo -e "${BLUE}--- Récupération de l'ID patient Ahmed Tounsi ---${NC}"
+PATIENT_RESPONSE=$(curl -s "http://localhost:8080/api/patients/cin/12345678")
+PATIENT_ID=$(echo "$PATIENT_RESPONSE" | jq -r '.id')
+echo "Patient ID récupéré: $PATIENT_ID"
+echo ""
+
+# --- Scénario B1: Consultation cardiaque complète ---
+echo -e "${BLUE}--- Scénario B1: Consultation cardiaque ---${NC}"
+echo ""
+
+CONSULTATION="{
+  \"patientId\": \"$PATIENT_ID\",
+  \"patientCin\": \"12345678\",
+  \"doctorId\": \"DR-CARDIO-001\",
+  \"doctorName\": \"Dr. Karim Mansour\",
+  \"diagnosis\": \"Hypertension artérielle légère - Recommandation suivi régulier\",
+  \"prescription\": [\"Amlodipine 5mg - 1x/jour\", \"Régime hyposodé\"],
+  \"notes\": \"Patient stable, contrôle dans 3 mois\",
+  \"acts\": [
+    {\"code\": \"CARD001\", \"description\": \"Consultation cardiologie spécialisée\", \"price\": 150},
+    {\"code\": \"ECG001\", \"description\": \"Électrocardiogramme 12 dérivations\", \"price\": 80},
+    {\"code\": \"ECHO001\", \"description\": \"Échocardiographie transthoracique\", \"price\": 200}
+  ]
+}"
+
+run_test "B1.1 - Cardio-Service: Créer consultation" \
+    "http://localhost:5001/api/consultation" "POST" "$CONSULTATION" "201"
+
+# --- Scénario B2: Génération de facture ---
+echo -e "${BLUE}--- Scénario B2: Génération de facture ---${NC}"
+echo ""
+
+INVOICE_REQUEST="{
+  \"patientId\": \"$PATIENT_ID\",
+  \"patientName\": \"Ahmed Tounsi\",
+  \"consultationId\": \"1\",
+  \"acts\": [
+    {\"code\": \"CARD001\", \"description\": \"Consultation cardiologie spécialisée\", \"price\": 150},
+    {\"code\": \"ECG001\", \"description\": \"Électrocardiogramme 12 dérivations\", \"price\": 80},
+    {\"code\": \"ECHO001\", \"description\": \"Échocardiographie transthoracique\", \"price\": 200}
+  ]
+}"
+
+run_test "B2.1 - Billing-Service: Générer facture" \
+    "http://localhost:3000/api/billing/generate" "POST" "$INVOICE_REQUEST" "201"
+
+# --- Scénario B3: Notification au patient ---
+echo -e "${BLUE}--- Scénario B3: Notification au patient ---${NC}"
+echo ""
+
+NOTIFICATION='{
+  "to": "ahmed.tounsi@example.com",
+  "subject": "NovaCare - Votre facture de consultation",
+  "body": "Bonjour Ahmed Tounsi,\n\nVotre facture pour la consultation du jour est disponible.\nMontant total: 430 TND\n\nMerci de votre confiance.\nNovaCare Medical Group",
   "type": "email"
 }'
-test_endpoint "Envoyer notification" "http://localhost:8083/api/notifications/send" "POST" "$notification_data"
 
-echo "=== Tests terminés ==="
+run_test "B3.1 - Notification-Service: Envoyer notification email" \
+    "http://localhost:8083/api/notifications/send" "POST" "$NOTIFICATION"
 
+# --- Scénario B4: Flux ESB Central ---
+echo -e "${BLUE}--- Scénario B4: Vérification flux ESB Central ---${NC}"
+echo ""
 
+run_test "B4.1 - ESB Central: Recherche patient" \
+    "http://localhost:8081/api/patient/search?cin=12345678"
+
+ESB_BILLING="{
+  \"patientId\": \"$PATIENT_ID\",
+  \"patientName\": \"Ahmed Tounsi\", 
+  \"consultationId\": \"2\",
+  \"acts\": [
+    {\"code\": \"CONS001\", \"description\": \"Consultation de suivi\", \"price\": 80}
+  ]
+}"
+
+run_test "B4.2 - ESB Central: Facturation via médiation" \
+    "http://localhost:8081/api/billing/generate" "POST" "$ESB_BILLING"
+
+# ═══════════════════════════════════════════════════════════════════════
+# RÉSUMÉ DES TESTS
+# ═══════════════════════════════════════════════════════════════════════
+echo ""
+echo "╔════════════════════════════════════════════════════════════════╗"
+echo "║                      RÉSUMÉ DES TESTS                          ║"
+echo "╚════════════════════════════════════════════════════════════════╝"
+echo ""
+echo -e "  Tests réussis:  ${GREEN}$TESTS_PASSED${NC}"
+echo -e "  Tests échoués:  ${RED}$TESTS_FAILED${NC}"
+echo ""
+
+if [ $TESTS_FAILED -eq 0 ]; then
+    echo -e "${GREEN}══════════════════════════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}  ✓ TOUS LES TESTS SONT PASSÉS AVEC SUCCÈS !                      ${NC}"
+    echo -e "${GREEN}══════════════════════════════════════════════════════════════════${NC}"
+    exit 0
+else
+    echo -e "${RED}══════════════════════════════════════════════════════════════════${NC}"
+    echo -e "${RED}  ✗ $TESTS_FAILED TEST(S) EN ÉCHEC                                 ${NC}"
+    echo -e "${RED}══════════════════════════════════════════════════════════════════${NC}"
+    exit 1
+fi
