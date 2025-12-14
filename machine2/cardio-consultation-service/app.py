@@ -43,6 +43,7 @@ def create_patient_locally(patient_data):
     """Crée un patient dans la base locale"""
     patients = load_patients()
     patient_id = str(patient_data.get('id', len(patients) + 1))
+    now = datetime.now().isoformat()
     
     patient = {
         'id': patient_id,
@@ -55,8 +56,29 @@ def create_patient_locally(patient_data):
         'address': patient_data.get('address'),
         'allergies': patient_data.get('allergies', []),
         'medicalHistory': patient_data.get('medicalHistory', []),
-        'createdAt': datetime.now().isoformat()
+        'createdAt': now,
+        'updatedAt': now,
+        'syncedAt': None
     }
+    
+    patients[patient_id] = patient
+    save_patients(patients)
+    return patient
+
+def update_patient_locally(patient_id, patient_data):
+    """Met à jour un patient dans la base locale"""
+    patients = load_patients()
+    if patient_id not in patients:
+        return None
+    
+    patient = patients[patient_id]
+    
+    # Mettre à jour les champs modifiables
+    for field in ['firstName', 'lastName', 'dateOfBirth', 'email', 'phone', 'address', 'allergies', 'medicalHistory']:
+        if patient_data.get(field) is not None:
+            patient[field] = patient_data.get(field)
+    
+    patient['updatedAt'] = datetime.now().isoformat()
     
     patients[patient_id] = patient
     save_patients(patients)
@@ -159,11 +181,28 @@ def checkin_patient():
 # ENDPOINTS DE DONNÉES LOCALES
 # ============================================
 
+@app.route('/api/local_patients', methods=['GET'])
+def get_all_local_patients():
+    """Récupère tous les patients locaux"""
+    patients = load_patients()
+    return jsonify(list(patients.values())), 200
+
 @app.route('/api/local_patient/<patient_id>', methods=['GET'])
 def get_local_patient(patient_id):
     """Récupère un patient local par ID"""
     patients = load_patients()
     patient = patients.get(str(patient_id))
+    
+    if patient:
+        return jsonify(patient), 200
+    else:
+        return jsonify({'error': 'Patient non trouvé localement'}), 404
+
+@app.route('/api/local_patient/<patient_id>', methods=['PUT'])
+def update_local_patient(patient_id):
+    """Met à jour un patient local"""
+    data = request.json
+    patient = update_patient_locally(str(patient_id), data)
     
     if patient:
         return jsonify(patient), 200
