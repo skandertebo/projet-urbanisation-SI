@@ -6,23 +6,40 @@
 http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
 http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
 
+	<!--
+	=====================================================
+	ESB LOCAL - CLINIC DATA TRANSFORMATION HUB
+	=====================================================
+	Demonstrates ESB value through format transformation:
+	- Local Cardio Service (Python): snake_case (first_name, last_name, date_of_birth)
+	- Central ESB/Patient Service: camelCase (firstName, lastName, dateOfBirth)
+	- Local Appointment Service (PHP): mixed format
+
+	ESB Local acts as translator between local clinic systems
+	and central headquarters systems.
+	=====================================================
+	-->
+
 	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" >
 		<http:listener-connection host="0.0.0.0" port="8082" />
 	</http:listener-config>
 
 	<http:request-config name="Cardio_Service_Request_Config" doc:name="HTTP Request configuration" >
-		<http:request-connection host="cardio-consultation-service" port="5000" />
+		<http:request-connection host="localhost" port="5001" />
 	</http:request-config>
 
 	<http:request-config name="Central_ESB_Request_Config" doc:name="HTTP Request configuration" >
-		<http:request-connection host="esb-central" port="8081" />
+		<http:request-connection host="localhost" port="8081" />
 	</http:request-config>
 
 	<http:request-config name="Local_Appointment_Service_Request_Config" doc:name="HTTP Request configuration" >
-		<http:request-connection host="local-appointment-service" port="80" />
+		<http:request-connection host="localhost" port="8002" />
 	</http:request-config>
 
-	<!-- Route: Search Patient (with Auto-Sync) -->
+	<!-- Route: Search Patient (with Auto-Sync and Format Transformation) -->
+	<!-- Local Cardio Service uses: snake_case (first_name, last_name) -->
+	<!-- Central ESB uses: camelCase (firstName, lastName) -->
+	<!-- ESB Local translates between formats automatically -->
 	<flow name="search-patient-sync-flow" >
 		<http:listener doc:name="GET /api/patient/search" config-ref="HTTP_Listener_config" path="/api/patient/search" allowedMethods="GET">
 			<http:response statusCode="#[vars.httpStatus default 200]">
@@ -36,23 +53,50 @@ http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/
 
 		<set-variable value="#[attributes.queryParams.cin]" doc:name="Set CIN" variableName="cin"/>
 		<set-variable value="notfound" doc:name="Init Status" variableName="patientStatus"/>
-		<logger level="INFO" message="ESB Local: Recherche patient CIN: #[vars.cin]"/>
+		<logger level="INFO" message="ESB Local: Recherche patient CIN: #[vars.cin] - Will transform between snake_case (local) and camelCase (central)"/>
 
-		<!-- Step 1: Try Local -->
+		<!-- Step 1: Try Local (returns snake_case format) -->
 		<try>
 			<http:request method="GET" config-ref="Cardio_Service_Request_Config" path="/api/local_patient/cin/{cin}">
 				<http:uri-params><![CDATA[#[output application/java --- {"cin": vars.cin}]]]></http:uri-params>
 			</http:request>
 			<set-variable value="found" variableName="patientStatus"/>
-			<logger level="INFO" message="ESB Local: Patient trouvé localement"/>
+			<set-variable value="local" variableName="dataSource"/>
+			<logger level="INFO" message="ESB Local: Patient trouvé localement (format snake_case)"/>
+
+			<!-- Transform from local snake_case to API camelCase format -->
+			<ee:transform doc:name="Transform Local (snake_case) to API (camelCase)">
+				<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	// Transform from local clinic format (snake_case) to API format (camelCase)
+	id: payload.id,
+	cin: payload.cin,
+	firstName: payload.first_name,
+	lastName: payload.last_name,
+	fullName: (payload.first_name default "") ++ " " ++ (payload.last_name default ""),
+	dateOfBirth: payload.date_of_birth,
+	email: payload.contact_email,
+	phone: payload.contact_phone,
+	address: if (payload.home_address is String) payload.home_address else (payload.home_address default "") as String,
+	allergies: payload.known_allergies default [],
+	medicalHistory: payload.medical_history default [],
+	bloodType: payload.blood_type,
+	emergencyContact: if (payload.emergency_contact is String) payload.emergency_contact else (payload.emergency_contact default "") as String
+}]]></ee:set-payload>
+				</ee:message>
+			</ee:transform>
+
 			<error-handler>
 				<on-error-continue type="HTTP:NOT_FOUND">
-					<logger level="INFO" message="ESB Local: Non trouvé localement"/>
+					<logger level="INFO" message="ESB Local: Non trouvé localement, recherche au siège..."/>
 				</on-error-continue>
 			</error-handler>
 		</try>
 
-		<!-- Step 2: If not found locally, try Central -->
+		<!-- Step 2: If not found locally, try Central (returns camelCase) -->
 		<choice>
 			<when expression="#[vars.patientStatus == 'notfound']">
 				<try>
@@ -60,22 +104,60 @@ http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/
 						<http:query-params><![CDATA[#[output application/java --- {"cin": vars.cin}]]]></http:query-params>
 					</http:request>
 					<set-variable value="found" variableName="patientStatus"/>
-					<set-variable value="#[payload]" variableName="patientData"/>
-					<logger level="INFO" message="ESB Local: Patient trouvé au siège, sync..."/>
+					<set-variable value="central" variableName="dataSource"/>
+					<set-variable value="#[payload]" variableName="centralPatientData"/>
+					<logger level="INFO" message="ESB Local: Patient trouvé au siège (format camelCase), transformation pour sync local..."/>
 
-					<!-- Sync to local -->
+					<!-- Transform from Central camelCase to Local snake_case for sync -->
+					<ee:transform doc:name="Transform Central (camelCase) to Local (snake_case) for Sync">
+						<ee:message>
+							<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	// Transform from central format (camelCase) to local format (snake_case) for sync
+	id: payload.id,
+	cin: payload.cin,
+	first_name: payload.firstName,
+	last_name: payload.lastName,
+	date_of_birth: payload.dateOfBirth,
+	contact_email: payload.email,
+	contact_phone: payload.phone,
+	home_address: if (payload.address is String) payload.address else (payload.address default "") as String,
+	known_allergies: payload.allergies default [],
+	medical_history: payload.medicalHistory default [],
+	blood_type: payload.bloodType,
+	emergency_contact: if (payload.emergencyContact is String) payload.emergencyContact else (payload.emergencyContact default "") as String
+}]]></ee:set-payload>
+						</ee:message>
+					</ee:transform>
+					<set-variable value="#[payload]" variableName="localFormatPatient"/>
+
+					<!-- Sync to local service (expects snake_case) -->
 					<try>
 						<http:request method="POST" config-ref="Cardio_Service_Request_Config" path="/api/local_patient">
-							<http:body><![CDATA[#[vars.patientData]]]></http:body>
+							<http:body><![CDATA[#[vars.localFormatPatient]]]></http:body>
 							<http:headers><![CDATA[#[output application/java --- {"Content-Type": "application/json"}]]]></http:headers>
 						</http:request>
+						<logger level="INFO" message="ESB Local: Patient synchronisé localement avec transformation de format"/>
 						<error-handler>
 							<on-error-continue type="ANY">
-								<logger level="WARN" message="ESB Local: Sync échouée"/>
+								<logger level="WARN" message="ESB Local: Sync locale échouée, mais patient disponible"/>
 							</on-error-continue>
 						</error-handler>
 					</try>
-					<set-payload value="#[vars.patientData]"/>
+
+					<!-- Return the original central data in API format -->
+					<set-payload value="#[vars.centralPatientData]"/>
+					<!-- Add transformation metadata -->
+					<ee:transform doc:name="Add Transformation Metadata">
+						<ee:message>
+							<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+						</ee:message>
+					</ee:transform>
 
 					<error-handler>
 						<on-error-continue type="ANY">
@@ -90,7 +172,7 @@ http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/
 		<choice>
 			<when expression="#[vars.patientStatus == 'notfound']">
 				<set-variable value="404" variableName="httpStatus"/>
-				<set-payload value='#[output application/json --- {"error": "Patient not found", "requiresCreation": true, "missingFields": ["firstName", "lastName", "dateOfBirth"]}]'/>
+				<set-payload value='#[output application/json --- {"error": "Patient not found", "requiresCreation": true, "missingFields": ["firstName", "lastName", "dateOfBirth"], "hint": "Local clinic uses snake_case (first_name), API uses camelCase (firstName)"}]'/>
 				<raise-error type="APP:NOT_FOUND" description="Patient not found"/>
 			</when>
 		</choice>
@@ -103,7 +185,9 @@ http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/
 	</flow>
 
 	<!-- Route: Sync Patient to Central -->
-	<!-- Matches POST /api/patient/sync-to-central in mock -->
+	<!-- Local creates patient in snake_case format -->
+	<!-- Central expects camelCase format -->
+	<!-- ESB transforms before sending to central -->
 	<flow name="sync-to-central-flow" >
 		<http:listener doc:name="POST /api/patient/sync-to-central" config-ref="HTTP_Listener_config" path="/api/patient/sync-to-central" allowedMethods="POST">
 			<http:error-response statusCode="#[vars.httpStatus default 500]">
@@ -111,15 +195,49 @@ http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/
 			</http:error-response>
 		</http:listener>
 
-		<logger level="INFO" doc:name="Log Request" message="ESB Local: Sync vers siège - CIN: #[payload.cin]"/>
+		<logger level="INFO" doc:name="Log Request" message="ESB Local: Sync vers siège - Transformation snake_case -> camelCase"/>
+		<set-variable value="#[payload]" variableName="originalPayload" doc:name="Store Original"/>
+
+		<!-- Transform from Local snake_case to Central camelCase format -->
+		<ee:transform doc:name="Transform Local (snake_case) to Central (camelCase)">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	// Transform from local clinic format (snake_case) to central format (camelCase)
+	cin: payload.cin,
+	firstName: payload.first_name default payload.firstName,
+	lastName: payload.last_name default payload.lastName,
+	dateOfBirth: payload.date_of_birth default payload.dateOfBirth,
+	email: payload.contact_email default payload.email,
+	phone: payload.contact_phone default payload.phone,
+	address: (payload.home_address default payload.address default "") as String,
+	allergies: payload.known_allergies default payload.allergies default [],
+	medicalHistory: payload.medical_history default payload.medicalHistory default []
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="DEBUG" doc:name="Log Transformed" message="ESB Local: Payload transformé pour central: #[payload]"/>
 
 		<http:request method="POST" doc:name="Call Central ESB Create" config-ref="Central_ESB_Request_Config" path="/api/patient/create"/>
 
-		<logger level="INFO" doc:name="Log Success" message="ESB Local: Patient créé au siège avec succès"/>
-		<set-payload value='#[output application/json --- {"success": true, "message": "Patient synchronisé avec le siège", "centralId": payload.id, "centralPatient": payload}]'/>
+		<logger level="INFO" doc:name="Log Success" message="ESB Local: Patient créé au siège avec transformation de format"/>
+		<ee:transform doc:name="Build Success Response">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	success: true,
+	message: "Patient synchronisé avec le siège (transformation snake_case -> camelCase effectuée)",
+	centralId: payload.id,
+	centralPatient: payload
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
 
 		<error-handler >
-			<!-- Catch 409 Conflict specifically using expression -->
 			<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue (Conflict)" when='#[error.errorMessage.attributes.statusCode == 409]'>
 				<logger level="WARN" doc:name="Log Conflict" message="ESB Local: Patient existe déjà au siège"/>
 				<set-payload value='#[output application/json --- {"success": true, "message": "Patient existe déjà au siège", "alreadyExists": true}]'/>
@@ -129,9 +247,10 @@ http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/
 	</flow>
 
 	<!-- Route: Get Consultations -->
+	<!-- Consultation data transformation -->
 	<flow name="get-consultations-flow" >
 		<http:listener doc:name="GET /api/consultation/patient/{patientId}" config-ref="HTTP_Listener_config" path="/api/consultation/patient/{patientId}" allowedMethods="GET"/>
-		<logger level="INFO" doc:name="Log Request" message="ESB Local: Récupération consultations"/>
+		<logger level="INFO" doc:name="Log Request" message="ESB Local: Récupération consultations avec transformation de format"/>
 		<http:request method="GET" doc:name="Call Cardio Service" config-ref="Cardio_Service_Request_Config" path="/api/consultation/patient/{patientId}">
 			<http:uri-params ><![CDATA[#[output application/java
 ---
@@ -139,7 +258,31 @@ http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/
 	"patientId" : attributes.uriParams.patientId
 }]]]></http:uri-params>
 		</http:request>
-		<logger level="INFO" doc:name="Log Response" message="ESB Local: Consultations récupérées"/>
+		<!-- Transform consultation data to standardized format -->
+		<ee:transform doc:name="Normalize Consultation Data">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	consultations: (payload default []) map ((consultation) -> {
+		id: consultation.id,
+		patientId: consultation.patientId,
+		patientCin: consultation.patientCin,
+		doctorId: consultation.doctorId,
+		doctorName: consultation.doctorName,
+		consultationDate: consultation.date,
+		diagnosis: consultation.diagnosis,
+		prescription: consultation.prescription default [],
+		clinicalNotes: consultation.notes,
+		medicalActs: consultation.acts default [],
+		status: consultation.status
+	}),
+	count: sizeOf(payload default [])
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="Log Response" message="ESB Local: Consultations récupérées et normalisées"/>
 	</flow>
 
 	<!-- Route: Get Appointments -->

@@ -40,46 +40,49 @@ def save_consultations(consultations):
         json.dump(consultations, f, indent=2, ensure_ascii=False)
 
 def create_patient_locally(patient_data):
-    """Crée un patient dans la base locale"""
+    """Crée un patient dans la base locale (format snake_case local)"""
     patients = load_patients()
     patient_id = str(patient_data.get('id', len(patients) + 1))
     now = datetime.now().isoformat()
-    
+
+    # Local clinic uses snake_case format
     patient = {
         'id': patient_id,
         'cin': patient_data.get('cin'),
-        'firstName': patient_data.get('firstName'),
-        'lastName': patient_data.get('lastName'),
-        'dateOfBirth': patient_data.get('dateOfBirth'),
-        'email': patient_data.get('email'),
-        'phone': patient_data.get('phone'),
-        'address': patient_data.get('address'),
-        'allergies': patient_data.get('allergies', []),
-        'medicalHistory': patient_data.get('medicalHistory', []),
-        'createdAt': now,
-        'updatedAt': now,
-        'syncedAt': None
+        'first_name': patient_data.get('first_name'),
+        'last_name': patient_data.get('last_name'),
+        'date_of_birth': patient_data.get('date_of_birth'),
+        'contact_email': patient_data.get('contact_email'),
+        'contact_phone': patient_data.get('contact_phone'),
+        'home_address': patient_data.get('home_address'),
+        'known_allergies': patient_data.get('known_allergies', []),
+        'medical_history': patient_data.get('medical_history', []),
+        'blood_type': patient_data.get('blood_type'),
+        'emergency_contact': patient_data.get('emergency_contact'),
+        'created_at': now,
+        'updated_at': now,
+        'synced_at': None
     }
-    
+
     patients[patient_id] = patient
     save_patients(patients)
     return patient
 
 def update_patient_locally(patient_id, patient_data):
-    """Met à jour un patient dans la base locale"""
+    """Met à jour un patient dans la base locale (format snake_case)"""
     patients = load_patients()
     if patient_id not in patients:
         return None
-    
+
     patient = patients[patient_id]
-    
-    # Mettre à jour les champs modifiables
-    for field in ['firstName', 'lastName', 'dateOfBirth', 'email', 'phone', 'address', 'allergies', 'medicalHistory']:
+
+    # Mettre à jour les champs modifiables (snake_case format)
+    for field in ['first_name', 'last_name', 'date_of_birth', 'contact_email', 'contact_phone', 'home_address', 'known_allergies', 'medical_history', 'blood_type', 'emergency_contact']:
         if patient_data.get(field) is not None:
             patient[field] = patient_data.get(field)
-    
-    patient['updatedAt'] = datetime.now().isoformat()
-    
+
+    patient['updated_at'] = datetime.now().isoformat()
+
     patients[patient_id] = patient
     save_patients(patients)
     return patient
@@ -91,57 +94,90 @@ def update_patient_locally(patient_id, patient_data):
 def checkin_patient():
     """
     Endpoint de check-in patient - Point d'entrée métier principal
-    
+
     Flux:
     1. Appelle ESB-local pour rechercher le patient (local puis siège)
     2. Si trouvé → retourne le patient pour check-in
     3. Si non trouvé (404) → crée localement puis synchronise vers siège
+
+    Note: Local clinic uses snake_case, ESB handles transformation
     """
     data = request.json
     cin = data.get('cin')
-    
+
     if not cin:
         return jsonify({'error': 'CIN est requis'}), 400
-    
+
     print(f"[CHECKIN] Début check-in pour CIN: {cin}")
-    
+
     # Étape 1: Rechercher le patient via ESB-local
     try:
         print(f"[CHECKIN] Appel ESB-local pour recherche patient...")
         response = requests.get(f"{ESB_LOCAL_URL}/api/patient/search", params={'cin': cin}, timeout=10)
-        
+
         if response.status_code == 200:
             # Patient trouvé (soit local, soit synchronisé depuis siège)
+            # ESB returns camelCase format, we store in snake_case
             patient = response.json()
             print(f"[CHECKIN] Patient trouvé: {patient.get('firstName')} {patient.get('lastName')}")
             return jsonify({
                 'status': 'checked_in',
                 'message': 'Patient trouvé et prêt pour consultation',
                 'patient': patient,
-                'checkinTime': datetime.now().isoformat()
+                'checkinTime': datetime.now().isoformat(),
+                '_format_note': 'Response in API format (camelCase), local storage uses snake_case'
             }), 200
-            
+
         elif response.status_code == 404:
             # Patient non trouvé nulle part → création nécessaire
             print(f"[CHECKIN] Patient non trouvé, création nécessaire...")
-            
+
+            # Accept both camelCase (from API) and snake_case (from local forms)
+            first_name = data.get('first_name') or data.get('firstName')
+            last_name = data.get('last_name') or data.get('lastName')
+            date_of_birth = data.get('date_of_birth') or data.get('dateOfBirth')
+
             # Vérifier qu'on a les données nécessaires pour créer le patient
-            required_fields = ['firstName', 'lastName', 'dateOfBirth']
-            missing_fields = [f for f in required_fields if not data.get(f)]
-            
+            missing_fields = []
+            if not first_name:
+                missing_fields.append('first_name/firstName')
+            if not last_name:
+                missing_fields.append('last_name/lastName')
+            if not date_of_birth:
+                missing_fields.append('date_of_birth/dateOfBirth')
+
             if missing_fields:
                 return jsonify({
                     'error': 'Patient non trouvé. Pour créer un nouveau dossier, fournir: ' + ', '.join(missing_fields),
                     'requiresCreation': True,
-                    'missingFields': missing_fields
+                    'missingFields': missing_fields,
+                    '_format_hint': {
+                        'local_format': 'snake_case (first_name, last_name, date_of_birth)',
+                        'api_format': 'camelCase (firstName, lastName, dateOfBirth)',
+                        'both_accepted': True
+                    }
                 }), 404
-            
-            # Étape 2: Créer le patient localement
-            print(f"[CHECKIN] Création du patient localement...")
-            new_patient = create_patient_locally(data)
-            
+
+            # Étape 2: Créer le patient localement (snake_case format)
+            print(f"[CHECKIN] Création du patient localement (format snake_case)...")
+            patient_data = {
+                'cin': cin,
+                'first_name': first_name,
+                'last_name': last_name,
+                'date_of_birth': date_of_birth,
+                'contact_email': data.get('contact_email') or data.get('email'),
+                'contact_phone': data.get('contact_phone') or data.get('phone'),
+                'home_address': data.get('home_address') or data.get('address'),
+                'known_allergies': data.get('known_allergies') or data.get('allergies', []),
+                'medical_history': data.get('medical_history') or data.get('medicalHistory', []),
+                'blood_type': data.get('blood_type') or data.get('bloodType'),
+                'emergency_contact': data.get('emergency_contact') or data.get('emergencyContact')
+            }
+            new_patient = create_patient_locally(patient_data)
+
             # Étape 3: Synchroniser vers le siège via ESB-local
-            print(f"[CHECKIN] Synchronisation vers le siège...")
+            # ESB-local will transform snake_case to camelCase
+            print(f"[CHECKIN] Synchronisation vers le siège via ESB (transformation snake_case → camelCase)...")
             try:
                 sync_response = requests.post(
                     f"{ESB_LOCAL_URL}/api/patient/sync-to-central",
@@ -149,7 +185,7 @@ def checkin_patient():
                     timeout=10
                 )
                 if sync_response.status_code in [200, 201]:
-                    print(f"[CHECKIN] Patient synchronisé avec le siège")
+                    print(f"[CHECKIN] Patient synchronisé avec le siège (format transformé)")
                     # Mettre à jour avec l'ID du siège si disponible
                     sync_data = sync_response.json()
                     if sync_data.get('centralId'):
@@ -162,17 +198,30 @@ def checkin_patient():
             except Exception as sync_error:
                 print(f"[CHECKIN] Attention: Sync vers siège échouée: {sync_error}")
                 # On continue quand même - le patient est créé localement
-            
+
+            # Return in API format (camelCase) for consistency
             return jsonify({
                 'status': 'checked_in',
                 'message': 'Nouveau patient créé et synchronisé',
-                'patient': new_patient,
+                'patient': {
+                    'id': new_patient['id'],
+                    'cin': new_patient['cin'],
+                    'firstName': new_patient['first_name'],
+                    'lastName': new_patient['last_name'],
+                    'dateOfBirth': new_patient['date_of_birth'],
+                    'email': new_patient['contact_email'],
+                    'phone': new_patient['contact_phone'],
+                    'address': new_patient['home_address'],
+                    'allergies': new_patient['known_allergies'],
+                    'medicalHistory': new_patient['medical_history']
+                },
                 'isNewPatient': True,
-                'checkinTime': datetime.now().isoformat()
+                'checkinTime': datetime.now().isoformat(),
+                '_format_note': 'Stored in snake_case, returned in camelCase (API format)'
             }), 201
         else:
             return jsonify({'error': f'Erreur ESB-local: {response.status_code}'}), 500
-            
+
     except requests.exceptions.RequestException as e:
         print(f"[CHECKIN] Erreur communication ESB-local: {e}")
         return jsonify({'error': 'Service ESB non disponible'}), 503
@@ -192,7 +241,7 @@ def get_local_patient(patient_id):
     """Récupère un patient local par ID"""
     patients = load_patients()
     patient = patients.get(str(patient_id))
-    
+
     if patient:
         return jsonify(patient), 200
     else:
@@ -203,7 +252,7 @@ def update_local_patient(patient_id):
     """Met à jour un patient local"""
     data = request.json
     patient = update_patient_locally(str(patient_id), data)
-    
+
     if patient:
         return jsonify(patient), 200
     else:
@@ -234,7 +283,7 @@ def create_consultation():
     """Crée une consultation cardiaque"""
     data = request.json
     consultations = load_consultations()
-    
+
     consultation = {
         'id': len(consultations) + 1,
         'patientId': data.get('patientId'),
@@ -248,10 +297,10 @@ def create_consultation():
         'acts': data.get('acts', []),
         'status': 'completed'
     }
-    
+
     consultations.append(consultation)
     save_consultations(consultations)
-    
+
     return jsonify(consultation), 201
 
 @app.route('/api/consultation/patient/<patient_id>', methods=['GET'])

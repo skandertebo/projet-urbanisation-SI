@@ -117,7 +117,7 @@ function initializeTestData() {
     ];
 
     contracts.forEach(contract => {
-      db.run(`INSERT INTO contracts (id, patientCin, patientName, insurerName, policyNumber, 
+      db.run(`INSERT INTO contracts (id, patientCin, patientName, insurerName, policyNumber,
               coverageType, coveragePercentage, maxAnnualAmount, usedAmount, startDate, endDate, status, createdAt)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [contract.id, contract.patientCin, contract.patientName, contract.insurerName,
@@ -197,10 +197,10 @@ app.post('/api/contracts', (req, res) => {
 // UPDATE contract
 app.put('/api/contracts/:id', (req, res) => {
   const { status, usedAmount, coveragePercentage, maxAnnualAmount, endDate } = req.body;
-  
+
   const updates = [];
   const params = [];
-  
+
   if (status) { updates.push('status = ?'); params.push(status); }
   if (usedAmount !== undefined) { updates.push('usedAmount = ?'); params.push(usedAmount); }
   if (coveragePercentage) { updates.push('coveragePercentage = ?'); params.push(coveragePercentage); }
@@ -216,7 +216,7 @@ app.put('/api/contracts/:id', (req, res) => {
   db.run(`UPDATE contracts SET ${updates.join(', ')} WHERE id = ?`, params, function(err) {
     if (err) return res.status(500).json({ error: 'Database error' });
     if (this.changes === 0) return res.status(404).json({ error: 'Contract not found' });
-    
+
     db.get('SELECT * FROM contracts WHERE id = ?', [req.params.id], (err, contract) => {
       res.json(contract);
     });
@@ -234,27 +234,38 @@ app.delete('/api/contracts/:id', (req, res) => {
 
 // ============================================
 // COVERAGE VERIFICATION
+// Insurance service uses PascalCase format internally
 // ============================================
 
 app.get('/api/coverage/verify', (req, res) => {
-  const { patientCin, amount } = req.query;
+  // Internal format uses PascalCase: PatientCIN, RequestedAmount
+  const { PatientCIN, RequestedAmount } = req.query;
 
-  if (!patientCin) {
-    return res.status(400).json({ error: 'patientCin is required' });
+  if (!PatientCIN) {
+    return res.status(400).json({
+      Error: 'PatientCIN is required',
+      ExpectedFormat: {
+        PatientCIN: 'Patient national ID',
+        RequestedAmount: 'Amount to verify coverage for'
+      }
+    });
   }
 
-  const requestedAmount = parseFloat(amount) || 0;
+  const requestedAmount = parseFloat(RequestedAmount) || 0;
 
-  db.all(`SELECT * FROM contracts WHERE patientCin = ? AND status = 'active' 
-          AND date('now') BETWEEN startDate AND endDate`, [patientCin], (err, contracts) => {
-    if (err) return res.status(500).json({ error: 'Database error' });
+  db.all(`SELECT * FROM contracts WHERE patientCin = ? AND status = 'active'
+          AND date('now') BETWEEN startDate AND endDate`, [PatientCIN], (err, contracts) => {
+    if (err) return res.status(500).json({ Error: 'Database error' });
 
     if (contracts.length === 0) {
+      // Response in PascalCase format
       return res.json({
-        covered: false,
-        message: 'No active insurance coverage found',
-        patientShare: requestedAmount,
-        insuranceShare: 0
+        IsCovered: false,
+        Message: 'No active insurance coverage found',
+        PatientCIN: PatientCIN,
+        PatientShare: requestedAmount,
+        InsuranceShare: 0,
+        Currency: 'TND'
       });
     }
 
@@ -267,23 +278,26 @@ app.get('/api/coverage/verify', (req, res) => {
       );
       totalCoverage += potentialCoverage;
 
+      // PascalCase response format
       return {
-        insurer: contract.insurerName,
-        policyNumber: contract.policyNumber,
-        coverageType: contract.coverageType,
-        coveragePercentage: contract.coveragePercentage,
-        remainingBudget: remainingBudget,
-        potentialCoverage: potentialCoverage
+        InsurerName: contract.insurerName,
+        PolicyNumber: contract.policyNumber,
+        CoverageType: contract.coverageType,
+        CoveragePercentage: contract.coveragePercentage,
+        RemainingAnnualBudget: remainingBudget,
+        PotentialCoverageAmount: potentialCoverage
       };
     });
 
+    // PascalCase response format
     res.json({
-      covered: totalCoverage > 0,
-      patientCin,
-      requestedAmount,
-      insuranceShare: Math.min(totalCoverage, requestedAmount),
-      patientShare: Math.max(0, requestedAmount - totalCoverage),
-      coverageDetails
+      IsCovered: totalCoverage > 0,
+      PatientCIN: PatientCIN,
+      RequestedAmount: requestedAmount,
+      InsuranceShare: Math.min(totalCoverage, requestedAmount),
+      PatientShare: Math.max(0, requestedAmount - totalCoverage),
+      Currency: 'TND',
+      CoverageDetails: coverageDetails
     });
   });
 });
@@ -295,7 +309,7 @@ app.get('/api/coverage/verify', (req, res) => {
 // GET all claims
 app.get('/api/claims', (req, res) => {
   const { contractId, status } = req.query;
-  let query = `SELECT c.*, ct.patientCin, ct.insurerName, ct.policyNumber 
+  let query = `SELECT c.*, ct.patientCin, ct.insurerName, ct.policyNumber
                FROM claims c JOIN contracts ct ON c.contractId = ct.id WHERE 1=1`;
   const params = [];
 
@@ -331,7 +345,7 @@ app.post('/api/claims', (req, res) => {
     const id = uuidv4();
     const submittedAt = new Date().toISOString();
 
-    db.run(`INSERT INTO claims (id, contractId, invoiceNumber, totalAmount, coveredAmount, 
+    db.run(`INSERT INTO claims (id, contractId, invoiceNumber, totalAmount, coveredAmount,
             patientShare, acts, status, submittedAt)
             VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
       [id, contractId, invoiceNumber, totalAmount, coveredAmount, patientShare,
@@ -390,7 +404,7 @@ app.put('/api/claims/:id/process', (req, res) => {
             status: newStatus,
             processedAt,
             coveredAmount: action === 'approve' ? claim.coveredAmount : 0,
-            message: action === 'approve' 
+            message: action === 'approve'
               ? `Claim approved. ${claim.coveredAmount.toFixed(2)} TND will be reimbursed.`
               : `Claim rejected: ${rejectionReason}`
           });

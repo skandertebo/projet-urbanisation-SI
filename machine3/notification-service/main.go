@@ -11,17 +11,24 @@ import (
 	"github.com/gorilla/mux"
 )
 
+// NotificationRequest - Internal format uses different field names
+// Expects: recipient_address, message_title, message_content, delivery_channel
 type NotificationRequest struct {
-	To      string `json:"to"`
-	Subject string `json:"subject"`
-	Body    string `json:"body"`
-	Type    string `json:"type"` // email, sms, etc.
+	RecipientAddress string `json:"recipient_address"`
+	MessageTitle     string `json:"message_title"`
+	MessageContent   string `json:"message_content"`
+	DeliveryChannel  string `json:"delivery_channel"` // EMAIL, SMS, PUSH
+	Priority         string `json:"priority"`         // HIGH, NORMAL, LOW
+	Metadata         map[string]string `json:"metadata,omitempty"`
 }
 
+// NotificationResponse - Response in internal format
 type NotificationResponse struct {
-	Success   bool   `json:"success"`
-	MessageID string `json:"messageId"`
-	Message   string `json:"message"`
+	DeliveryStatus   string `json:"delivery_status"` // SENT, FAILED, QUEUED
+	TransactionID    string `json:"transaction_id"`
+	StatusMessage    string `json:"status_message"`
+	Timestamp        string `json:"timestamp"`
+	DeliveryChannel  string `json:"delivery_channel"`
 }
 
 type HealthResponse struct {
@@ -58,21 +65,38 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 func sendNotificationHandler(w http.ResponseWriter, r *http.Request) {
 	var req NotificationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		http.Error(w, `{"delivery_status": "FAILED", "status_message": "Invalid request body format. Expected: recipient_address, message_title, message_content, delivery_channel"}`, http.StatusBadRequest)
 		return
 	}
 
+	// Validate required fields in internal format
+	if req.RecipientAddress == "" || req.MessageContent == "" {
+		http.Error(w, `{"delivery_status": "FAILED", "status_message": "recipient_address and message_content are required"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Default delivery channel
+	if req.DeliveryChannel == "" {
+		req.DeliveryChannel = "EMAIL"
+	}
+
 	// Simuler l'envoi de notification
-	// Dans un vrai système, on utiliserait un service d'email (SendGrid, AWS SES, etc.)
-	messageID := fmt.Sprintf("msg-%d", time.Now().UnixNano())
+	transactionID := fmt.Sprintf("TXN-%d", time.Now().UnixNano())
+	timestamp := time.Now().Format(time.RFC3339)
 
-	log.Printf("Notification envoyée - Type: %s, To: %s, Subject: %s", req.Type, req.To, req.Subject)
-	log.Printf("Body: %s", req.Body)
+	log.Printf("[NOTIFICATION] Channel: %s, To: %s, Title: %s", req.DeliveryChannel, req.RecipientAddress, req.MessageTitle)
+	log.Printf("[NOTIFICATION] Content: %s", req.MessageContent)
+	if req.Priority != "" {
+		log.Printf("[NOTIFICATION] Priority: %s", req.Priority)
+	}
 
+	// Response in internal format
 	response := NotificationResponse{
-		Success:   true,
-		MessageID: messageID,
-		Message:   fmt.Sprintf("Notification %s envoyée avec succès à %s", req.Type, req.To),
+		DeliveryStatus:  "SENT",
+		TransactionID:   transactionID,
+		StatusMessage:   fmt.Sprintf("Notification delivered via %s to %s", req.DeliveryChannel, req.RecipientAddress),
+		Timestamp:       timestamp,
+		DeliveryChannel: req.DeliveryChannel,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
