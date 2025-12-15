@@ -1,0 +1,19 @@
+{
+  "id": 57,
+  "cin": "inventore",
+  "firstName": "Carroll",
+  "lastName": "Aliberti",
+  "fullName": "Carroll Aliberti",
+  "dateOfBirth": "enim",
+  "email": "Adolfo.Smorthwaite@gmail.com",
+  "phone": "(563)-484-3185",
+  "address": "Golden Gate Ave 73",
+  "allergies": [
+    "in",
+    "pariatur?"
+  ],
+  "medicalHistory": [
+    "Ut",
+    "nesciunt."
+  ]
+}

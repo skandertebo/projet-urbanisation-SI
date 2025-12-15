@@ -1,0 +1,24 @@
+[
+  {
+    "id": 1,
+    "name": "Doliprane 500mg",
+    "genericName": "Paracetamol",
+    "dosage": "500mg",
+    "form": "tablet",
+    "category": "analgesic",
+    "unitPrice": 5.50,
+    "stockQuantity": 100,
+    "requiresPrescription": 0
+  },
+  {
+    "id": 2,
+    "name": "Amoxicilline 1g",
+    "genericName": "Amoxicillin",
+    "dosage": "1g",
+    "form": "capsule",
+    "category": "antibiotic",
+    "unitPrice": 12.00,
+    "stockQuantity": 50,
+    "requiresPrescription": 1
+  }
+]

@@ -1,0 +1,18 @@
+{
+  "patient_identifier": "PAT-001",
+  "consultation_ref": "CONS-001",
+  "billing_items": [
+    {
+      "item_code": "CONSULT-GEN",
+      "item_description": "General Consultation",
+      "unit_price": 50,
+      "quantity": 1
+    },
+    {
+      "item_code": "ECG-001",
+      "item_description": "Electrocardiogram",
+      "unit_price": 75,
+      "quantity": 1
+    }
+  ]
+}

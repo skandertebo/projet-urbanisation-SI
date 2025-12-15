@@ -1,0 +1,15 @@
+{
+  "to": "patient@example.com",
+  "email": "patient@example.com",
+  "recipient": "patient@example.com",
+  "subject": "Appointment Reminder",
+  "title": "Appointment Reminder",
+  "body": "Your appointment is scheduled for tomorrow at 10:00 AM",
+  "message": "Your appointment is scheduled for tomorrow at 10:00 AM",
+  "content": "Your appointment is scheduled for tomorrow at 10:00 AM",
+  "type": "EMAIL",
+  "channel": "EMAIL",
+  "priority": "NORMAL",
+  "patientCin": "12345678",
+  "appointmentId": "APT-001"
+}

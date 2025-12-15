@@ -1,0 +1,23 @@
+{
+  "success": true,
+  "invoice": {
+    "invoiceId": "INV-2024-001",
+    "invoiceNumber": "F2024001",
+    "invoiceDate": "2024-12-15",
+    "patientId": "PAT-001",
+    "patientName": "John Doe",
+    "consultationId": "CONS-001",
+    "acts": [
+      {
+        "code": "CONSULT-GEN",
+        "description": "General Consultation",
+        "price": 50,
+        "quantity": 1
+      }
+    ],
+    "total": 125,
+    "currency": "TND",
+    "status": "PENDING"
+  },
+  "message": "Invoice generated successfully"
+}

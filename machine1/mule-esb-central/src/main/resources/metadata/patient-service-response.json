@@ -1,0 +1,12 @@
+{
+  "id": 1,
+  "cin": "12345678",
+  "firstName": "John",
+  "lastName": "Doe",
+  "dateOfBirth": "1990-01-15",
+  "email": "john.doe@example.com",
+  "phone": "+21612345678",
+  "address": "123 Main Street, Tunis",
+  "allergies": ["pollen", "penicillin"],
+  "medicalHistory": ["diabetes", "hypertension"]
+}

@@ -1,0 +1,114 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<types:mule xmlns:types="http://www.mulesoft.org/schema/mule/types">
+  <types:catalog>
+    <types:type name="PatientServiceResponse" format="json">
+      <types:shape format="weave" example="examples/patient-service-response-1.json"><![CDATA[%dw 2.0
+
+type PatientServiceResponse = {|
+  id: Number {"typeId": "int"}, 
+  cin: String, 
+  firstName: String, 
+  lastName: String, 
+  dateOfBirth: String, 
+  email: String, 
+  phone: String, 
+  address: String, 
+  allergies: Array<String>, 
+  medicalHistory: Array<String>
+|} {"example": "{\\\"id\\\":1,\\\"cin\\\":\\\"12345678\\\",\\\"firstName\\\":\\\"John\\\",\\\"lastName\\\":\\\"Doe\\\",\\\"dateOfBirth\\\":\\\"1990-01-15\\\",\\\"email\\\":\\\"john.doe@example.com\\\",\\\"phone\\\":\\\"+21612345678\\\",\\\"address\\\":\\\"123 Main Street, Tunis\\\",\\\"allergies\\\":[\\\"pollen\\\",\\\"penicillin\\\"],\\\"medicalHistory\\\":[\\\"diabetes\\\",\\\"hypertension\\\"]}"}
+
+]]></types:shape>
+    </types:type>
+    <types:type name="PatientApiResponse" format="json">
+      <types:shape format="weave" example="examples/patient-api-response.json"><![CDATA[%dw 2.0
+
+type PatientApiResponse = {|
+  id: Number {"typeId": "int"}, 
+  cin: String, 
+  firstName: String, 
+  lastName: String, 
+  fullName: String, 
+  dateOfBirth: String, 
+  email: String, 
+  phone: String, 
+  address: String, 
+  allergies: Array<String>, 
+  medicalHistory: Array<String>
+|} {"example": "{\\\"id\\\":57,\\\"cin\\\":\\\"inventore\\\",\\\"firstName\\\":\\\"Carroll\\\",\\\"lastName\\\":\\\"Aliberti\\\",\\\"fullName\\\":\\\"Carroll Aliberti\\\",\\\"dateOfBirth\\\":\\\"enim\\\",\\\"email\\\":\\\"Adolfo.Smorthwaite@gmail.com\\\",\\\"phone\\\":\\\"(563)-484-3185\\\",\\\"address\\\":\\\"Golden Gate Ave 73\\\",\\\"allergies\\\":[\\\"in\\\",\\\"pariatur?\\\"],\\\"medicalHistory\\\":[\\\"Ut\\\",\\\"nesciunt.\\\"]}"}
+
+]]></types:shape>
+    </types:type>
+    <types:type name="BillingServiceResponse" format="json">
+      <types:shape format="weave" example="examples/billing-service-response.json"><![CDATA[%dw 2.0
+
+type BillingServiceResponse = {|
+  success: Boolean, 
+  invoice: {|
+    invoice_id: String, 
+    invoice_number: String, 
+    invoice_date: String, 
+    patient_identifier: String, 
+    patient_full_name: String, 
+    consultation_ref: String, 
+    billing_items: Array<{|      item_code: String,       item_description: String,       unit_price: Number {"typeId": "double"},       quantity: Number {"typeId": "int"}    |}>, 
+    total_amount: Number {"typeId": "double"}, 
+    currency: String, 
+    status: String
+  |}, 
+  message: String
+|} {"example": "{\\\"success\\\":true,\\\"invoice\\\":{\\\"invoice_id\\\":\\\"INV-2024-001\\\",\\\"invoice_number\\\":\\\"F2024001\\\",\\\"invoice_date\\\":\\\"2024-12-15\\\",\\\"patient_identifier\\\":\\\"PAT-001\\\",\\\"patient_full_name\\\":\\\"John Doe\\\",\\\"consultation_ref\\\":\\\"CONS-001\\\",\\\"billing_items\\\":[{\\\"item_code\\\":\\\"CONSULT-GEN\\\",\\\"item_description\\\":\\\"General Consultation\\\",\\\"unit_price\\\":50.00,\\\"quantity\\\":1}],\\\"total_amount\\\":125.00,\\\"currency\\\":\\\"TND\\\",\\\"status\\\":\\\"PENDING\\\"},\\\"message\\\":\\\"Invoice generated successfully\\\"}"}
+
+]]></types:shape>
+    </types:type>
+    <types:type name="BillingApiResponse" format="json">
+      <types:shape format="weave" example="examples/billing-api-response.json"><![CDATA[%dw 2.0
+
+type BillingApiResponse = {|
+  success: Boolean, 
+  invoice: {|
+    invoiceId: String, 
+    invoiceNumber: String, 
+    invoiceDate: String, 
+    patientId: String, 
+    patientName: String, 
+    consultationId: String, 
+    acts: Array<{|      code: String,       description: String,       price: Number {"typeId": "int"},       quantity: Number {"typeId": "int"}    |}>, 
+    total: Number {"typeId": "int"}, 
+    currency: String, 
+    status: String
+  |}, 
+  message: String
+|} {"example": "{\\\"success\\\":true,\\\"invoice\\\":{\\\"invoiceId\\\":\\\"INV-2024-001\\\",\\\"invoiceNumber\\\":\\\"F2024001\\\",\\\"invoiceDate\\\":\\\"2024-12-15\\\",\\\"patientId\\\":\\\"PAT-001\\\",\\\"patientName\\\":\\\"John Doe\\\",\\\"consultationId\\\":\\\"CONS-001\\\",\\\"acts\\\":[{\\\"code\\\":\\\"CONSULT-GEN\\\",\\\"description\\\":\\\"General Consultation\\\",\\\"price\\\":50,\\\"quantity\\\":1}],\\\"total\\\":125,\\\"currency\\\":\\\"TND\\\",\\\"status\\\":\\\"PENDING\\\"},\\\"message\\\":\\\"Invoice generated successfully\\\"}"}
+
+]]></types:shape>
+    </types:type>
+  </types:catalog>
+  <types:enrichment select="#9ae69755-365b-48e4-a923-2e9dde2c971e">
+    <types:processor-declaration>
+      <types:input-event>
+        <types:message>
+          <types:payload type="PatientServiceResponse"/>
+        </types:message>
+      </types:input-event>
+      <types:output-event>
+        <types:message>
+          <types:payload type="PatientApiResponse"/>
+        </types:message>
+      </types:output-event>
+    </types:processor-declaration>
+  </types:enrichment>
+  <types:enrichment select="#fca69e47-2c3c-4d3f-8841-e1e09a4725bb">
+    <types:processor-declaration>
+      <types:input-event>
+        <types:message>
+          <types:payload type="BillingServiceResponse"/>
+        </types:message>
+      </types:input-event>
+      <types:output-event>
+        <types:message>
+          <types:payload type="BillingApiResponse"/>
+        </types:message>
+      </types:output-event>
+    </types:processor-declaration>
+  </types:enrichment>
+</types:mule>

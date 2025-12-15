@@ -1,0 +1,19 @@
+{
+  "IsCovered": true,
+  "PatientCIN": "12345678",
+  "RequestedAmount": 500.00,
+  "InsuranceShare": 400.00,
+  "PatientShare": 100.00,
+  "Currency": "TND",
+  "Message": "Coverage verified successfully",
+  "CoverageDetails": [
+    {
+      "InsurerName": "CNAM",
+      "PolicyNumber": "POL-2024-001",
+      "CoverageType": "FULL",
+      "CoveragePercentage": 80,
+      "RemainingAnnualBudget": 5000.00,
+      "PotentialCoverageAmount": 400.00
+    }
+  ]
+}

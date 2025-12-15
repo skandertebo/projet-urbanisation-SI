@@ -1,0 +1,19 @@
+{
+  "cin": "12345678",
+  "firstName": "John",
+  "first_name": "John",
+  "lastName": "Doe",
+  "last_name": "Doe",
+  "dateOfBirth": "1990-01-15",
+  "date_of_birth": "1990-01-15",
+  "email": "john.doe@example.com",
+  "contact_email": "john.doe@example.com",
+  "phone": "+21612345678",
+  "contact_phone": "+21612345678",
+  "address": "123 Main Street",
+  "home_address": "123 Main Street",
+  "allergies": ["pollen"],
+  "known_allergies": ["pollen"],
+  "medicalHistory": ["diabetes"],
+  "medical_history": ["diabetes"]
+}

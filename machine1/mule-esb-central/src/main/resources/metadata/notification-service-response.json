@@ -1,0 +1,7 @@
+{
+  "delivery_status": "SENT",
+  "transaction_id": "MSG-2024-001",
+  "status_message": "Notification sent successfully",
+  "delivery_channel": "EMAIL",
+  "timestamp": "2024-12-15T10:30:00Z"
+}
