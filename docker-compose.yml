@@ -85,25 +85,6 @@ services:
       timeout: 10s
       retries: 3
 
-  # ESB 1 : Central (MuleSoft)
-  esb-central:
-    build:
-      context: ./machine1/mule-esb-central
-    container_name: esb-central
-    ports:
-      - "8081:8081"
-    networks:
-      - novacare-network
-    environment:
-      - MULE_ENV=production
-    depends_on:
-      - patient-core-service
-      - billing-service
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8081/actuator/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
   # ============================================
   # MACHINE 2 : CLINIQUE SPÉCIALISÉE (El Hayet)
@@ -120,7 +101,7 @@ services:
       - novacare-network
     environment:
       - FLASK_ENV=production
-      - ESB_LOCAL_URL=http://esb-local:8082
+      - ESB_LOCAL_URL=http://host.docker.internal:8082
     volumes:
       - cardio-data:/app/data
       - ./machine2/cardio-consultation-service/app.py:/app/app.py:ro
@@ -149,25 +130,6 @@ services:
       timeout: 10s
       retries: 3
 
-  # ESB 2 : Local (MuleSoft)
-  esb-local:
-    build:
-      context: ./machine2/mule-esb-local
-    container_name: esb-local
-    ports:
-      - "8082:8082"
-    networks:
-      - novacare-network
-    environment:
-      - MULE_ENV=production
-    depends_on:
-      - cardio-consultation-service
-      - local-appointment-service
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8082/actuator/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
   # Sync Service (Go) - Cron job synchronisation locale → centrale
   sync-service:
@@ -181,11 +143,12 @@ services:
     environment:
       - PORT=8085
       - CARDIO_SERVICE_URL=http://cardio-consultation-service:5000
-      - ESB_CENTRAL_URL=http://esb-central:8081
+      - ESB_CENTRAL_URL=http://host.docker.internal:8081
       - SYNC_INTERVAL=* * * * *
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - cardio-consultation-service
-      - esb-central
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8085/health"]
       interval: 30s

@@ -6,31 +6,47 @@
 http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
 http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
 
+	<!--
+	=====================================================
+	ESB CENTRAL - DATA TRANSFORMATION HUB
+	=====================================================
+	Demonstrates ESB value through format transformation:
+	- Patient Service (HQ): camelCase (firstName, lastName)
+	- Billing Service: underscore format (patient_identifier, billing_items)
+	- Insurance Service: PascalCase (PatientCIN, CoverageAmount)
+	- Notification Service: underscore format (recipient_address, message_content)
+	- API Gateway (Kong): Standard REST format
+	=====================================================
+	-->
+
 	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" >
 		<http:listener-connection host="0.0.0.0" port="8081" />
 	</http:listener-config>
 
 	<http:request-config name="Patient_Service_Request_Config" doc:name="HTTP Request configuration" >
-		<http:request-connection host="patient-core-service" port="8080" />
+		<http:request-connection host="localhost" port="8080" />
 	</http:request-config>
 
 	<http:request-config name="Billing_Service_Request_Config" doc:name="HTTP Request configuration" >
-		<http:request-connection host="billing-service" port="3000" />
+		<http:request-connection host="localhost" port="3000" />
 	</http:request-config>
 
 	<http:request-config name="Insurance_Service_Request_Config" doc:name="HTTP Request configuration" >
-		<http:request-connection host="insurance-service" port="3001" />
+		<http:request-connection host="localhost" port="3001" />
 	</http:request-config>
 
 	<http:request-config name="Pharmacy_Service_Request_Config" doc:name="HTTP Request configuration" >
-		<http:request-connection host="pharmacy-service" port="3002" />
+		<http:request-connection host="localhost" port="3002" />
 	</http:request-config>
 
 	<http:request-config name="Notification_Service_Request_Config" doc:name="HTTP Request configuration" >
-		<http:request-connection host="notification-service" port="8083" />
+		<http:request-connection host="localhost" port="8083" />
 	</http:request-config>
 
 	<!-- Route: Search Patient -->
+	<!-- API expects: cin (query param) -->
+	<!-- Patient Service returns: camelCase (firstName, lastName, dateOfBirth) -->
+	<!-- ESB normalizes to standard API format -->
 	<flow name="search-patient-flow" >
 		<http:listener doc:name="GET /api/patient/search" config-ref="HTTP_Listener_config" path="/api/patient/search" allowedMethods="GET">
 			<http:response statusCode="#[vars.httpStatus default 200]" />
@@ -46,7 +62,29 @@ http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/
 	"cin" : attributes.queryParams.cin
 }]]]></http:uri-params>
 		</http:request>
-		<logger level="INFO" doc:name="Log Response" message="ESB Central: Patient trouvé"/>
+		<!-- Transform Patient Service response (camelCase) to standardized API format -->
+		<ee:transform doc:name="Normalize Patient Data">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	// Standard API format (normalized by ESB)
+	id: payload.id,
+	cin: payload.cin,
+	firstName: payload.firstName,
+	lastName: payload.lastName,
+	fullName: (payload.firstName default "") ++ " " ++ (payload.lastName default ""),
+	dateOfBirth: payload.dateOfBirth,
+	email: payload.email,
+	phone: payload.phone,
+	address: payload.address,
+	allergies: payload.allergies default [],
+	medicalHistory: payload.medicalHistory default []
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="Log Response" message="ESB Central: Patient trouvé et transformé"/>
 		<error-handler >
 			<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" type="ANY">
 				<set-payload value='#[{"error": "Patient non trouvé"}]' doc:name="Set 404 Payload"/>
@@ -56,37 +94,150 @@ http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/
 	</flow>
 
 	<!-- Route: Create Patient -->
+	<!-- API sends: standard format (firstName, lastName, dateOfBirth) -->
+	<!-- Patient Service expects: camelCase format -->
+	<!-- ESB validates and forwards -->
 	<flow name="create-patient-flow" >
 		<http:listener doc:name="POST /api/patient/create" config-ref="HTTP_Listener_config" path="/api/patient/create" allowedMethods="POST"/>
 		<logger level="INFO" doc:name="Log Request" message="ESB Central: Création de patient"/>
+		<!-- Validate and enrich incoming data -->
+		<ee:transform doc:name="Validate and Transform for Patient Service">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	// Transform to Patient Service format (camelCase)
+	cin: payload.cin,
+	firstName: payload.firstName default payload.first_name,
+	lastName: payload.lastName default payload.last_name,
+	dateOfBirth: payload.dateOfBirth default payload.date_of_birth,
+	email: payload.email default payload.contact_email,
+	phone: payload.phone default payload.contact_phone,
+	address: payload.address default payload.home_address,
+	allergies: payload.allergies default payload.known_allergies default [],
+	medicalHistory: payload.medicalHistory default payload.medical_history default []
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
 		<http:request method="POST" doc:name="Call Patient Service" config-ref="Patient_Service_Request_Config" path="/api/patients"/>
 		<logger level="INFO" doc:name="Log Response" message="ESB Central: Patient créé avec succès"/>
 	</flow>
 
 	<!-- Route: Generate Invoice -->
+	<!-- API sends: standard format (patientId, consultationId, acts) -->
+	<!-- Billing Service expects: underscore format (patient_identifier, consultation_ref, billing_items) -->
+	<!-- ESB transforms between formats -->
 	<flow name="generate-invoice-flow" >
 		<http:listener doc:name="POST /api/billing/generate" config-ref="HTTP_Listener_config" path="/api/billing/generate" allowedMethods="POST"/>
-		<logger level="INFO" doc:name="Log Request" message="ESB Central: Génération de facture"/>
+		<logger level="INFO" doc:name="Log Request" message="ESB Central: Génération de facture - Transformation API -> Billing format"/>
+
+		<!-- Transform from API format to Billing Service internal format -->
+		<ee:transform doc:name="Transform to Billing Service Format">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	// Transform to Billing Service format (underscore naming)
+	patient_identifier: payload.patientId,
+	consultation_ref: payload.consultationId,
+	billing_items: (payload.acts default []) map ((act, index) -> {
+		item_code: act.code default ("ACT-" ++ (index + 1) as String),
+		item_description: act.description default act.code default "Medical Act",
+		unit_price: act.price default 0,
+		quantity: act.quantity default 1
+	})
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="DEBUG" doc:name="Log Transformed Payload" message="ESB Central: Payload transformé pour Billing: #[payload]"/>
+
 		<http:request method="POST" doc:name="Call Billing Service" config-ref="Billing_Service_Request_Config" path="/api/billing/generate"/>
-		<logger level="INFO" doc:name="Log Response" message="ESB Central: Facture générée avec succès"/>
+
+		<!-- Transform response back to API format -->
+		<ee:transform doc:name="Transform Response to API Format">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	success: payload.success,
+	invoice: {
+		// Transform from Billing internal format back to API format
+		invoiceId: payload.invoice.invoice_id,
+		invoiceNumber: payload.invoice.invoice_number,
+		invoiceDate: payload.invoice.invoice_date,
+		patientId: payload.invoice.patient_identifier,
+		patientName: payload.invoice.patient_full_name,
+		consultationId: payload.invoice.consultation_ref,
+		acts: (payload.invoice.billing_items default []) map ((item) -> {
+			code: item.item_code,
+			description: item.item_description,
+			price: item.unit_price,
+			quantity: item.quantity default 1
+		}),
+		total: payload.invoice.total_amount,
+		currency: payload.invoice.currency default "TND",
+		status: payload.invoice.status
+	},
+	message: payload.message
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="Log Response" message="ESB Central: Facture générée et réponse transformée"/>
 	</flow>
 
 	<!-- Route: Verify Insurance Coverage -->
+	<!-- API sends: patientCin, amount (standard camelCase) -->
+	<!-- Insurance Service expects: PascalCase (PatientCIN, RequestedAmount) -->
+	<!-- ESB transforms between formats -->
 	<flow name="verify-coverage-flow" >
 		<http:listener doc:name="GET /api/insurance/coverage/verify" config-ref="HTTP_Listener_config" path="/api/insurance/coverage/verify" allowedMethods="GET"/>
-		<logger level="INFO" doc:name="Log Request" message="ESB Central: Vérification couverture assurance"/>
+		<logger level="INFO" doc:name="Log Request" message="ESB Central: Vérification couverture assurance - Transformation API -> Insurance format"/>
+
+		<!-- Insurance Service uses PascalCase naming -->
 		<http:request method="GET" doc:name="Call Insurance Service" config-ref="Insurance_Service_Request_Config" path="/api/coverage/verify">
 			<http:query-params><![CDATA[#[output application/java
 ---
 {
-	"patientCin" : attributes.queryParams.patientCin,
-	"amount" : attributes.queryParams.amount
+	// Transform from API format (camelCase) to Insurance format (PascalCase)
+	"PatientCIN" : attributes.queryParams.patientCin,
+	"RequestedAmount" : attributes.queryParams.amount
 }]]]></http:query-params>
 		</http:request>
-		<logger level="INFO" doc:name="Log Response" message="ESB Central: Couverture vérifiée"/>
+
+		<!-- Transform Insurance response (PascalCase) back to API format (camelCase) -->
+		<ee:transform doc:name="Transform Response to API Format">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	// Transform from Insurance PascalCase to API camelCase
+	covered: payload.IsCovered,
+	patientCin: payload.PatientCIN,
+	requestedAmount: payload.RequestedAmount default 0,
+	insuranceShare: payload.InsuranceShare default 0,
+	patientShare: payload.PatientShare default 0,
+	currency: payload.Currency default "TND",
+	message: payload.Message default "",
+	coverageDetails: (payload.CoverageDetails default []) map ((detail) -> {
+		insurer: detail.InsurerName,
+		policyNumber: detail.PolicyNumber,
+		coverageType: detail.CoverageType,
+		coveragePercentage: detail.CoveragePercentage,
+		remainingBudget: detail.RemainingAnnualBudget,
+		potentialCoverage: detail.PotentialCoverageAmount
+	})
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="Log Response" message="ESB Central: Couverture vérifiée et réponse transformée"/>
 	</flow>
 
 	<!-- Route: Get Medications -->
+	<!-- Pharmacy Service uses its own format, ESB normalizes -->
 	<flow name="get-medications-flow" >
 		<http:listener doc:name="GET /api/pharmacy/medications" config-ref="HTTP_Listener_config" path="/api/pharmacy/medications" allowedMethods="GET"/>
 		<logger level="INFO" doc:name="Log Request" message="ESB Central: Recherche médicaments"/>
@@ -98,15 +249,83 @@ http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/
 	"category" : attributes.queryParams.category
 }]]]></http:query-params>
 		</http:request>
-		<logger level="INFO" doc:name="Log Response" message="ESB Central: Médicaments récupérés"/>
+		<!-- Transform and enrich medication data -->
+		<ee:transform doc:name="Normalize Medication Response">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	medications: (payload default []) map ((med) -> {
+		id: med.id,
+		name: med.name,
+		genericName: med.genericName,
+		dosage: med.dosage,
+		form: med.form,
+		category: med.category,
+		unitPrice: med.unitPrice,
+		inStock: (med.stockQuantity default 0) > 0,
+		stockQuantity: med.stockQuantity default 0,
+		requiresPrescription: med.requiresPrescription == 1
+	}),
+	count: sizeOf(payload default [])
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="Log Response" message="ESB Central: Médicaments récupérés et normalisés"/>
 	</flow>
 
 	<!-- Route: Send Notification -->
+	<!-- API sends: to, subject, body, type (standard format) -->
+	<!-- Notification Service expects: recipient_address, message_title, message_content, delivery_channel -->
+	<!-- ESB transforms between formats -->
 	<flow name="send-notification-flow" >
 		<http:listener doc:name="POST /api/notifications/send" config-ref="HTTP_Listener_config" path="/api/notifications/send" allowedMethods="POST"/>
-		<logger level="INFO" doc:name="Log Request" message="ESB Central: Envoi notification"/>
+		<logger level="INFO" doc:name="Log Request" message="ESB Central: Envoi notification - Transformation API -> Notification format"/>
+
+		<!-- Transform from API format to Notification Service format -->
+		<ee:transform doc:name="Transform to Notification Service Format">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	// Transform to Notification Service format (underscore naming)
+	recipient_address: payload.to default payload.email default payload.recipient,
+	message_title: payload.subject default payload.title default "Notification",
+	message_content: payload.body default payload.message default payload.content,
+	delivery_channel: upper(payload.'type' default payload.channel default "EMAIL"),
+	priority: upper(payload.priority default "NORMAL"),
+	metadata: {
+		source: "esb-central",
+		originalFormat: "API",
+		patientCin: payload.patientCin default "",
+		appointmentId: payload.appointmentId default ""
+	}
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="DEBUG" doc:name="Log Transformed" message="ESB Central: Notification transformée: #[payload]"/>
+
 		<http:request method="POST" doc:name="Call Notification Service" config-ref="Notification_Service_Request_Config" path="/api/notifications/send"/>
-		<logger level="INFO" doc:name="Log Response" message="ESB Central: Notification envoyée"/>
+
+		<!-- Transform response back to API format -->
+		<ee:transform doc:name="Transform Response to API Format">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	// Transform from Notification internal format to API format
+	success: payload.delivery_status == "SENT",
+	messageId: payload.transaction_id,
+	message: payload.status_message,
+	deliveryChannel: payload.delivery_channel,
+	timestamp: payload.timestamp
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="Log Response" message="ESB Central: Notification envoyée et réponse transformée"/>
 	</flow>
 
 	<!-- Health Check -->
