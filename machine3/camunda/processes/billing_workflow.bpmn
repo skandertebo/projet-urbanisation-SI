@@ -9,7 +9,7 @@
       <bpmn:extensionElements>
         <camunda:connector>
           <camunda:inputOutput>
-            <camunda:inputParameter name="url">http://esb-local:8082/api/consultation/patient/${patientId}</camunda:inputParameter>
+            <camunda:inputParameter name="url">http://kong:8000/api/consultation/patient/${patientId}</camunda:inputParameter>
             <camunda:inputParameter name="method">GET</camunda:inputParameter>
             <camunda:outputParameter name="consultations">${response}</camunda:outputParameter>
           </camunda:inputOutput>
@@ -24,7 +24,7 @@
       <bpmn:extensionElements>
         <camunda:connector>
           <camunda:inputOutput>
-            <camunda:inputParameter name="url">http://esb-central:8081/api/insurance/coverage/verify?patientCin=${patientCin}&amp;amount=${totalAmount}</camunda:inputParameter>
+            <camunda:inputParameter name="url">http://kong:8000/api/insurance/coverage/verify?patientCin=${patientCin}&amp;amount=${totalAmount}</camunda:inputParameter>
             <camunda:inputParameter name="method">GET</camunda:inputParameter>
             <camunda:outputParameter name="insuranceResult">${response}</camunda:outputParameter>
           </camunda:inputOutput>
@@ -43,7 +43,7 @@
       <bpmn:extensionElements>
         <camunda:connector>
           <camunda:inputOutput>
-            <camunda:inputParameter name="url">http://esb-central:8081/api/pharmacy/medications?search=${medicationName}</camunda:inputParameter>
+            <camunda:inputParameter name="url">http:/kong:8000/api/pharmacy/medications?search=${medicationName}</camunda:inputParameter>
             <camunda:inputParameter name="method">GET</camunda:inputParameter>
             <camunda:outputParameter name="pharmacySearch">${response}</camunda:outputParameter>
           </camunda:inputOutput>
@@ -80,7 +80,7 @@
       <bpmn:extensionElements>
         <camunda:connector>
           <camunda:inputOutput>
-            <camunda:inputParameter name="url">http://esb-central:8081/api/billing/generate</camunda:inputParameter>
+            <camunda:inputParameter name="url">http://kong:8000/api/billing/generate</camunda:inputParameter>
             <camunda:inputParameter name="method">POST</camunda:inputParameter>
             <camunda:inputParameter name="body">{
   "patientId": "${patientId}",
@@ -105,7 +105,7 @@
       <bpmn:extensionElements>
         <camunda:connector>
           <camunda:inputOutput>
-            <camunda:inputParameter name="url">http://notification-service:8083/api/notifications/send</camunda:inputParameter>
+            <camunda:inputParameter name="url">http://kong:8000/api/notifications/send</camunda:inputParameter>
             <camunda:inputParameter name="method">POST</camunda:inputParameter>
             <camunda:inputParameter name="body">{
   "to": "patient@email.com",

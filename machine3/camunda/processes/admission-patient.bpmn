@@ -1,28 +1,29 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" 
-                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" 
-                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" 
-                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI" 
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
                   xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
-                  id="Definitions_1" 
-                  targetNamespace="http://bpmn.io/schema/bpmn">
+                  id="Definitions_1"
+                  targetNamespace="http://novacare.medical">
   
-  <bpmn:process id="admission-patient" name="Admission Patient &amp; Synchronisation" isExecutable="true">
+  <bpmn:process id="admission-patient" name="Admission Patient  Synchronisation" isExecutable="true">
     
     <!-- Start Event -->
     <bpmn:startEvent id="StartEvent_1" name="Check-in Patient">
       <bpmn:outgoing>Flow_1</bpmn:outgoing>
     </bpmn:startEvent>
     
-    <!-- Service Task: Recherche locale -->
+    <!-- Service Task: Recherche locale via Kong -->
     <bpmn:serviceTask id="ServiceTask_SearchLocal" name="Recherche Patient Local">
       <bpmn:extensionElements>
         <camunda:connector>
           <camunda:connectorId>http-connector</camunda:connectorId>
           <camunda:inputOutput>
-            <camunda:inputParameter name="url">http://esb-local:8082/api/checkin?cin=${cin}</camunda:inputParameter>
+            <camunda:inputParameter name="url">http://kong:8000/api/checkin?cin=${cin}</camunda:inputParameter>
             <camunda:inputParameter name="method">GET</camunda:inputParameter>
-            <camunda:outputParameter name="response">${response}</camunda:outputParameter>
+            <camunda:outputParameter name="patientFound">${response.found}</camunda:outputParameter>
+            <camunda:outputParameter name="patientData">${response.data}</camunda:outputParameter>
           </camunda:inputOutput>
         </camunda:connector>
       </bpmn:extensionElements>
@@ -42,14 +43,15 @@
       <bpmn:incoming>Flow_3</bpmn:incoming>
     </bpmn:endEvent>
     
-    <!-- Service Task: Recherche au siège -->
+    <!-- Service Task: Recherche au siège via Kong -->
     <bpmn:serviceTask id="ServiceTask_SearchHQ" name="Recherche au Siège">
       <bpmn:extensionElements>
         <camunda:connector>
           <camunda:connectorId>http-connector</camunda:connectorId>
           <camunda:inputOutput>
-            <camunda:inputParameter name="url">http://esb-central:8081/api/patient/search?cin=${cin}</camunda:inputParameter>
+            <camunda:inputParameter name="url">http://kong:8000/api/patients/search?cin=${cin}</camunda:inputParameter>
             <camunda:inputParameter name="method">GET</camunda:inputParameter>
+            <camunda:outputParameter name="patientData">${response}</camunda:outputParameter>
           </camunda:inputOutput>
         </camunda:connector>
       </bpmn:extensionElements>
@@ -64,15 +66,16 @@
       <bpmn:outgoing>Flow_7</bpmn:outgoing>
     </bpmn:exclusiveGateway>
     
-    <!-- Service Task: Synchroniser le profil -->
+    <!-- Service Task: Synchroniser le profil via Kong -->
     <bpmn:serviceTask id="ServiceTask_Sync" name="Synchroniser le Profil">
       <bpmn:extensionElements>
         <camunda:connector>
           <camunda:connectorId>http-connector</camunda:connectorId>
           <camunda:inputOutput>
-            <camunda:inputParameter name="url">http://cardio-consultation-service:5000/api/local_patient</camunda:inputParameter>
+            <camunda:inputParameter name="url">http://kong:8000/api/local_patient</camunda:inputParameter>
             <camunda:inputParameter name="method">POST</camunda:inputParameter>
             <camunda:inputParameter name="payload">${patientData}</camunda:inputParameter>
+            <camunda:outputParameter name="syncStatus">${response.status}</camunda:outputParameter>
           </camunda:inputOutput>
         </camunda:connector>
       </bpmn:extensionElements>
@@ -110,10 +113,8 @@
   
   <bpmndi:BPMNDiagram id="BPMNDiagram_1">
     <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="admission-patient">
-      <!-- Diagram elements would go here -->
+      <!-- Diagram visualization elements -->
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>
   
 </bpmn:definitions>
-
-

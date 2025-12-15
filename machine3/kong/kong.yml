@@ -2,44 +2,92 @@ _format_version: "3.0"
 _transform: true
 
 services:
-  - name: patient-core-service
-    url: http://patient-core-service:8080
+  # ESB LOCAL (El Hayet Clinic)
+  - name: esb-local-service
+    url: http://esb-local:8082
     routes:
-      - name: patient-route
+      - name: clinic-admission
+        paths:
+          - /api/checkin
+          - /api/local_patient
+        strip_path: false
+        methods: [GET, POST, PUT]
+      
+      - name: clinic-appointment
+        paths:
+          - /api/appointment
+        strip_path: false
+        methods: [GET, POST, PUT, DELETE]
+      
+      - name: clinic-sync
+        paths:
+          - /api/sync
+        strip_path: false
+        methods: [POST]
+      
+      - name: clinic-consultation-patient  # NEW: For billing workflow
+        paths:
+          - /api/consultation/patient
+        strip_path: false
+        methods: [GET]
+
+  # ESB CENTRAL (Hannibal HQ)
+  - name: esb-central-service
+    url: http://esb-central:8081
+    routes:
+      - name: hq-patients
         paths:
           - /api/patients
         strip_path: false
-
-  - name: billing-service
-    url: http://billing-service:3000
-    routes:
-      - name: billing-route
+        methods: [GET, POST, PUT, DELETE]
+      
+      - name: hq-patient-search  # NEW: For admission process
+        paths:
+          - /api/patients/search
+        strip_path: false
+        methods: [GET]
+      
+      - name: hq-billing
         paths:
           - /api/billing
         strip_path: false
-
-  - name: cardio-service
-    url: http://cardio-consultation-service:5000
-    routes:
-      - name: cardio-route
+        methods: [GET, POST]
+      
+      - name: hq-insurance
         paths:
-          - /api/cardio
+          - /api/insurance
         strip_path: false
-
-  - name: esb-local
-    url: http://esb-local:8082
-    routes:
-      - name: esb-local-route
+        methods: [GET, POST]
+      
+      - name: hq-pharmacy
         paths:
-          - /api/checkin
+          - /api/pharmacy
         strip_path: false
+        methods: [GET, POST]
 
+  # NOTIFICATION SERVICE
   - name: notification-service
     url: http://notification-service:8083
     routes:
-      - name: notification-route
+      - name: notifications
         paths:
-          - /api/notifications
+          - /api/notifications/send  # Keep as-is (service uses this path)
         strip_path: false
+        methods: [POST]
 
-
+plugins:
+  - name: file-log
+    service: esb-local-service
+    config:
+      path: /tmp/kong_clinic_audit.log
+  
+  - name: file-log
+    service: esb-central-service
+    config:
+      path: /tmp/kong_hq_audit.log
+  
+  - name: rate-limiting
+    service: esb-local-service
+    config:
+      minute: 120
+      policy: local

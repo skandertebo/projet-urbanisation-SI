@@ -9,7 +9,7 @@
       <bpmn:extensionElements>
         <camunda:connector>
           <camunda:inputOutput>
-            <camunda:inputParameter name="url">http://esb-local:8082/api/consultation/patient/${patientId}</camunda:inputParameter>
+            <camunda:inputParameter name="url">http://kong:8000/api/consultation/patient/${patientId}</camunda:inputParameter>
             <camunda:inputParameter name="method">GET</camunda:inputParameter>
             <camunda:outputParameter name="consultations">${response}</camunda:outputParameter>
           </camunda:inputOutput>
@@ -50,7 +50,7 @@ execution.setVariable("actsJson", JSON.stringify(consultation.acts || []));</bpm
       <bpmn:extensionElements>
         <camunda:connector>
           <camunda:inputOutput>
-            <camunda:inputParameter name="url">http://esb-central:8081/api/insurance/coverage/verify?patientCin=${patientCin}&amp;amount=${totalAmount}</camunda:inputParameter>
+            <camunda:inputParameter name="url">http://kong:8000/api/insurance/coverage/verify?patientCin=${patientCin}&amp;amount=${totalAmount}</camunda:inputParameter>
             <camunda:inputParameter name="method">GET</camunda:inputParameter>
             <camunda:outputParameter name="insuranceResult">${response}</camunda:outputParameter>
             <camunda:outputParameter name="insuranceCovered">
@@ -104,7 +104,7 @@ if (prescription &amp;&amp; prescription.length &gt; 0) {
       <bpmn:extensionElements>
         <camunda:connector>
           <camunda:inputOutput>
-            <camunda:inputParameter name="url">http://esb-central:8081/api/pharmacy/medications?search=${medicationName}</camunda:inputParameter>
+            <camunda:inputParameter name="url">http://kong:8000/api/pharmacy/medications?search=${medicationName}</camunda:inputParameter>
             <camunda:inputParameter name="method">GET</camunda:inputParameter>
             <camunda:outputParameter name="pharmacySearch">${response}</camunda:outputParameter>
             <camunda:outputParameter name="prescriptionValid">
@@ -142,7 +142,7 @@ if (prescription &amp;&amp; prescription.length &gt; 0) {
       <bpmn:extensionElements>
         <camunda:connector>
           <camunda:inputOutput>
-            <camunda:inputParameter name="url">http://esb-central:8081/api/billing/generate</camunda:inputParameter>
+            <camunda:inputParameter name="url">http://kong:8000/api/billing/generate</camunda:inputParameter>
             <camunda:inputParameter name="method">POST</camunda:inputParameter>
             <camunda:inputParameter name="body">{
   "patientId": "${patientId}",
@@ -184,7 +184,7 @@ print("DEBUG invoiceNumber=" + execution.getVariable("invoiceNumber"));</bpmn:sc
       <bpmn:extensionElements>
         <camunda:connector>
           <camunda:inputOutput>
-            <camunda:inputParameter name="url">http://notification-service:8083/api/notifications/send</camunda:inputParameter>
+            <camunda:inputParameter name="url">http://kong:8000/api/notifications/send</camunda:inputParameter>
             <camunda:inputParameter name="method">POST</camunda:inputParameter>
             <camunda:inputParameter name="body">{
   "to": "patient@email.com",
