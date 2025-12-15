@@ -80,11 +80,11 @@ output application/json
 	dateOfBirth: payload.date_of_birth,
 	email: payload.contact_email,
 	phone: payload.contact_phone,
-	address: payload.home_address,
+	address: if (payload.home_address is String) payload.home_address else (payload.home_address default "") as String,
 	allergies: payload.known_allergies default [],
 	medicalHistory: payload.medical_history default [],
 	bloodType: payload.blood_type,
-	emergencyContact: payload.emergency_contact
+	emergencyContact: if (payload.emergency_contact is String) payload.emergency_contact else (payload.emergency_contact default "") as String
 }]]></ee:set-payload>
 				</ee:message>
 			</ee:transform>
@@ -123,11 +123,11 @@ output application/json
 	date_of_birth: payload.dateOfBirth,
 	contact_email: payload.email,
 	contact_phone: payload.phone,
-	home_address: payload.address,
+	home_address: if (payload.address is String) payload.address else (payload.address default "") as String,
 	known_allergies: payload.allergies default [],
 	medical_history: payload.medicalHistory default [],
 	blood_type: payload.bloodType,
-	emergency_contact: payload.emergencyContact
+	emergency_contact: if (payload.emergencyContact is String) payload.emergencyContact else (payload.emergencyContact default "") as String
 }]]></ee:set-payload>
 						</ee:message>
 					</ee:transform>
@@ -212,7 +212,7 @@ output application/json
 	dateOfBirth: payload.date_of_birth default payload.dateOfBirth,
 	email: payload.contact_email default payload.email,
 	phone: payload.contact_phone default payload.phone,
-	address: payload.home_address default payload.address,
+	address: (payload.home_address default payload.address default "") as String,
 	allergies: payload.known_allergies default payload.allergies default [],
 	medicalHistory: payload.medical_history default payload.medicalHistory default []
 }]]></ee:set-payload>

@@ -78,7 +78,7 @@ output application/json
 	dateOfBirth: payload.dateOfBirth,
 	email: payload.email,
 	phone: payload.phone,
-	address: payload.address,
+	address: (payload.address default "") as String,
 	allergies: payload.allergies default [],
 	medicalHistory: payload.medicalHistory default []
 }]]></ee:set-payload>
@@ -114,7 +114,7 @@ output application/json
 	dateOfBirth: payload.dateOfBirth default payload.date_of_birth,
 	email: payload.email default payload.contact_email,
 	phone: payload.phone default payload.contact_phone,
-	address: payload.address default payload.home_address,
+	address: (payload.address default payload.home_address default "") as String,
 	allergies: payload.allergies default payload.known_allergies default [],
 	medicalHistory: payload.medicalHistory default payload.medical_history default []
 }]]></ee:set-payload>
