@@ -1,0 +1,403 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:modeler="http://camunda.org/schema/modeler/1.0" id="Definitions_0j6gktz" targetNamespace="http://bpmn.io/schema/bpmn" exporter="Camunda Modeler" exporterVersion="5.42.0" modeler:executionPlatform="Camunda Platform" modeler:executionPlatformVersion="7.24.0">
+  <bpmn:process id="billing_workflow" name="Billing Workflow" isExecutable="true" camunda:historyTimeToLive="30">
+    <bpmn:startEvent id="Event_066r3xg" name="Consultation Completed">
+      <bpmn:outgoing>Flow_0tna6v3</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MessageEventDefinition_0c9slqm" messageRef="Message_2fql7ap" />
+    </bpmn:startEvent>
+    <bpmn:serviceTask id="Activity_1x69ny0" name="Get patient consultations">
+      <bpmn:extensionElements>
+        <camunda:connector>
+          <camunda:inputOutput>
+            <camunda:inputParameter name="url">http://esb-local:8082/api/consultation/patient/${patientId}</camunda:inputParameter>
+            <camunda:inputParameter name="method">GET</camunda:inputParameter>
+            <camunda:outputParameter name="consultations">${response}</camunda:outputParameter>
+          </camunda:inputOutput>
+          <camunda:connectorId>http-connector</camunda:connectorId>
+        </camunda:connector>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_0tna6v3</bpmn:incoming>
+      <bpmn:outgoing>Flow_1o200lh</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="Flow_0tna6v3" sourceRef="Event_066r3xg" targetRef="Activity_1x69ny0" />
+    <bpmn:serviceTask id="Activity_1ds1m7r" name="Verify insurance coverage">
+      <bpmn:extensionElements>
+        <camunda:connector>
+          <camunda:inputOutput>
+            <camunda:inputParameter name="url">http://esb-central:8081/api/insurance/coverage/verify?patientCin=${patientCin}&amp;amount=${totalAmount}</camunda:inputParameter>
+            <camunda:inputParameter name="method">GET</camunda:inputParameter>
+            <camunda:outputParameter name="insuranceResult">${response}</camunda:outputParameter>
+          </camunda:inputOutput>
+          <camunda:connectorId>http-connector</camunda:connectorId>
+        </camunda:connector>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_1rk1qpb</bpmn:incoming>
+      <bpmn:outgoing>Flow_02p3hdp</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:exclusiveGateway id="Gateway_15r4k7k" name="Insurance covered?">
+      <bpmn:incoming>Flow_1d2m3ij</bpmn:incoming>
+      <bpmn:outgoing>Flow_08sxxw9</bpmn:outgoing>
+      <bpmn:outgoing>Flow_034xv10</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:serviceTask id="Activity_0pnqch2" name="Verify prescription medications">
+      <bpmn:extensionElements>
+        <camunda:connector>
+          <camunda:inputOutput>
+            <camunda:inputParameter name="url">http://esb-central:8081/api/pharmacy/medications?search=${medicationName}</camunda:inputParameter>
+            <camunda:inputParameter name="method">GET</camunda:inputParameter>
+            <camunda:outputParameter name="pharmacySearch">${response}</camunda:outputParameter>
+          </camunda:inputOutput>
+          <camunda:connectorId>http-connector</camunda:connectorId>
+        </camunda:connector>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_0xhuk7n</bpmn:incoming>
+      <bpmn:outgoing>Flow_0ovtgcr</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:userTask id="Activity_0vh5yq7" name="Manual insurance handling">
+      <bpmn:incoming>Flow_08sxxw9</bpmn:incoming>
+      <bpmn:outgoing>Flow_01j0m0c</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:sequenceFlow id="Flow_08sxxw9" name="NO" sourceRef="Gateway_15r4k7k" targetRef="Activity_0vh5yq7">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${insuranceCovered == false}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:endEvent id="Event_1ybcr9e">
+      <bpmn:incoming>Flow_01j0m0c</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_01j0m0c" sourceRef="Activity_0vh5yq7" targetRef="Event_1ybcr9e" />
+    <bpmn:exclusiveGateway id="Gateway_05xztic" name="Prescription valid?">
+      <bpmn:incoming>Flow_0noxz7o</bpmn:incoming>
+      <bpmn:outgoing>Flow_175i6lc</bpmn:outgoing>
+      <bpmn:outgoing>Flow_0oi4yg8</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:userTask id="Activity_1oosj62" name="Manual prescription validation">
+      <bpmn:incoming>Flow_175i6lc</bpmn:incoming>
+      <bpmn:outgoing>Flow_0qsv7pv</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:sequenceFlow id="Flow_175i6lc" name="NO" sourceRef="Gateway_05xztic" targetRef="Activity_1oosj62">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${prescriptionValid == false}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:serviceTask id="Activity_1htzxpq" name="Generate invoice">
+      <bpmn:extensionElements>
+        <camunda:connector>
+          <camunda:inputOutput>
+            <camunda:inputParameter name="url">http://esb-central:8081/api/billing/generate</camunda:inputParameter>
+            <camunda:inputParameter name="method">POST</camunda:inputParameter>
+            <camunda:inputParameter name="body">{
+  "patientId": "${patientId}",
+  "consultationId": "${consultation.id}",
+  "acts": ${actsJson}
+}</camunda:inputParameter>
+            <camunda:outputParameter name="billingResult">${response}</camunda:outputParameter>
+          </camunda:inputOutput>
+          <camunda:connectorId>http-connector</camunda:connectorId>
+        </camunda:connector>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_0oi4yg8</bpmn:incoming>
+      <bpmn:outgoing>Flow_0fjqm14</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="Flow_0oi4yg8" name="Yes" sourceRef="Gateway_05xztic" targetRef="Activity_1htzxpq">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${prescriptionValid == true}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:endEvent id="Event_1lf9p7t">
+      <bpmn:incoming>Flow_0qsv7pv</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:serviceTask id="Activity_1yqomhx" name="Send billing notification">
+      <bpmn:extensionElements>
+        <camunda:connector>
+          <camunda:inputOutput>
+            <camunda:inputParameter name="url">http://notification-service:8083/api/notifications/send</camunda:inputParameter>
+            <camunda:inputParameter name="method">POST</camunda:inputParameter>
+            <camunda:inputParameter name="body">{
+  "to": "patient@email.com",
+  "subject": "Votre facture médicale",
+  "body": "Votre facture ${invoiceNumber} est prête.",
+  "type": "email"
+}</camunda:inputParameter>
+          </camunda:inputOutput>
+          <camunda:connectorId>http-connector</camunda:connectorId>
+        </camunda:connector>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_0ao7qib</bpmn:incoming>
+      <bpmn:outgoing>Flow_15jo8rb</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="Event_0mbgd74" name="Billing completed">
+      <bpmn:incoming>Flow_1wh9ume</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:scriptTask id="Activity_02bodt6" name="Prepare billing data" scriptFormat="javascript">
+      <bpmn:incoming>Flow_1o200lh</bpmn:incoming>
+      <bpmn:outgoing>Flow_1rk1qpb</bpmn:outgoing>
+      <bpmn:script>var raw = execution.getVariable("consultations");
+var list = (typeof raw === "string") ? JSON.parse(raw) : raw;
+
+if (!list || list.length === 0) {
+  throw "No consultations found for patientId=" + execution.getVariable("patientId");
+}
+
+var consultation = list[list.length - 1];
+
+execution.setVariable("consultation", consultation);
+execution.setVariable("acts", consultation.acts || []);
+execution.setVariable("prescription", consultation.prescription || []);
+execution.setVariable("patientCin", consultation.patientCin);
+
+var total = 0;
+for (var i = 0; i &lt; (consultation.acts || []).length; i++) {
+  total += consultation.acts[i].price || 0;
+}
+execution.setVariable("totalAmount", total);
+execution.setVariable("actsJson", JSON.stringify(consultation.acts || []));</bpmn:script>
+    </bpmn:scriptTask>
+    <bpmn:sequenceFlow id="Flow_1o200lh" sourceRef="Activity_1x69ny0" targetRef="Activity_02bodt6" />
+    <bpmn:sequenceFlow id="Flow_1rk1qpb" sourceRef="Activity_02bodt6" targetRef="Activity_1ds1m7r" />
+    <bpmn:scriptTask id="Activity_0vstkg8" name="Check prescription validity" scriptFormat="JavaScript">
+      <bpmn:incoming>Flow_0ovtgcr</bpmn:incoming>
+      <bpmn:outgoing>Flow_0noxz7o</bpmn:outgoing>
+      <bpmn:script>var raw = execution.getVariable("pharmacySearch");
+
+// default = false so gateway always has a value
+execution.setVariable("prescriptionValid", false);
+
+if (raw == null) {
+  execution.setVariable("pharmacyError", "pharmacySearch is null");
+} else {
+  try {
+    var meds = (typeof raw === "string") ? JSON.parse(raw) : raw;
+    execution.setVariable("prescriptionValid", Array.isArray(meds) &amp;&amp; meds.length &gt; 0);
+  } catch (e) {
+    execution.setVariable("pharmacyError", "Parse failed: " + e);
+    execution.setVariable("pharmacyRaw", raw);
+  }
+}</bpmn:script>
+    </bpmn:scriptTask>
+    <bpmn:sequenceFlow id="Flow_0ovtgcr" sourceRef="Activity_0pnqch2" targetRef="Activity_0vstkg8" />
+    <bpmn:sequenceFlow id="Flow_0noxz7o" sourceRef="Activity_0vstkg8" targetRef="Gateway_05xztic" />
+    <bpmn:scriptTask id="Activity_0vk87q0" name="Parse insurance result" scriptFormat="javascript">
+      <bpmn:incoming>Flow_02p3hdp</bpmn:incoming>
+      <bpmn:outgoing>Flow_1d2m3ij</bpmn:outgoing>
+      <bpmn:script>var raw = execution.getVariable("insuranceResult");
+var obj = (typeof raw === "string") ? JSON.parse(raw) : raw;
+
+execution.setVariable("insuranceCovered", obj.covered === true);
+execution.setVariable("insuranceShare", obj.insuranceShare);
+execution.setVariable("patientShare", obj.patientShare);</bpmn:script>
+    </bpmn:scriptTask>
+    <bpmn:sequenceFlow id="Flow_02p3hdp" sourceRef="Activity_1ds1m7r" targetRef="Activity_0vk87q0" />
+    <bpmn:sequenceFlow id="Flow_1d2m3ij" sourceRef="Activity_0vk87q0" targetRef="Gateway_15r4k7k" />
+    <bpmn:scriptTask id="Activity_18nntx4" name="Parse billing result" scriptFormat="javascript">
+      <bpmn:incoming>Flow_0fjqm14</bpmn:incoming>
+      <bpmn:outgoing>Flow_0ao7qib</bpmn:outgoing>
+      <bpmn:script>var raw = execution.getVariable("billingResult");
+
+// defaults so notification never crashes
+execution.setVariable("invoiceNumber", "UNKNOWN");
+execution.setVariable("invoiceTotal", 0);
+execution.setVariable("pdfPath", "");
+
+if (raw &amp;&amp; raw.trim().startsWith("{")) {
+  var obj = JSON.parse(raw);
+  if (obj.invoice) {
+    execution.setVariable("invoiceNumber", obj.invoice.invoiceNumber);
+    execution.setVariable("invoiceTotal", obj.invoice.total);
+    execution.setVariable("pdfPath", obj.invoice.pdfPath);
+  }
+}
+print("DEBUG totalAmount=" + execution.getVariable("totalAmount"));
+print("DEBUG invoiceNumber=" + execution.getVariable("invoiceNumber"));</bpmn:script>
+    </bpmn:scriptTask>
+    <bpmn:sequenceFlow id="Flow_0fjqm14" sourceRef="Activity_1htzxpq" targetRef="Activity_18nntx4" />
+    <bpmn:sequenceFlow id="Flow_0ao7qib" sourceRef="Activity_18nntx4" targetRef="Activity_1yqomhx" />
+    <bpmn:scriptTask id="Activity_1uwuz3m" name="build prescription query" scriptFormat="javascript">
+      <bpmn:incoming>Flow_034xv10</bpmn:incoming>
+      <bpmn:outgoing>Flow_0xhuk7n</bpmn:outgoing>
+      <bpmn:script>var prescription = execution.getVariable("prescription");
+
+if (prescription &amp;&amp; prescription.length &gt; 0) {
+  execution.setVariable("medicationName", prescription[0].medicationName);
+} else {
+  execution.setVariable("medicationName", null);
+}</bpmn:script>
+    </bpmn:scriptTask>
+    <bpmn:sequenceFlow id="Flow_034xv10" name="yes" sourceRef="Gateway_15r4k7k" targetRef="Activity_1uwuz3m">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${insuranceCovered == true}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:userTask id="Activity_0twut0g" name="Debug – Review billing result">
+      <bpmn:incoming>Flow_15jo8rb</bpmn:incoming>
+      <bpmn:outgoing>Flow_1wh9ume</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:sequenceFlow id="Flow_15jo8rb" sourceRef="Activity_1yqomhx" targetRef="Activity_0twut0g" />
+    <bpmn:sequenceFlow id="Flow_1wh9ume" sourceRef="Activity_0twut0g" targetRef="Event_0mbgd74" />
+    <bpmn:sequenceFlow id="Flow_0qsv7pv" sourceRef="Activity_1oosj62" targetRef="Event_1lf9p7t" />
+    <bpmn:sequenceFlow id="Flow_0xhuk7n" sourceRef="Activity_1uwuz3m" targetRef="Activity_0pnqch2" />
+  </bpmn:process>
+  <bpmn:message id="Message_2fql7ap" name="ConsultationCompleted" />
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="billing_workflow">
+      <bpmndi:BPMNShape id="Event_066r3xg_di" bpmnElement="Event_066r3xg">
+        <dc:Bounds x="172" y="82" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="160" y="125" width="62" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_1x69ny0_di" bpmnElement="Activity_1x69ny0">
+        <dc:Bounds x="310" y="60" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_02bodt6_di" bpmnElement="Activity_02bodt6">
+        <dc:Bounds x="510" y="60" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_1ds1m7r_di" bpmnElement="Activity_1ds1m7r">
+        <dc:Bounds x="690" y="60" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_0vk87q0_di" bpmnElement="Activity_0vk87q0">
+        <dc:Bounds x="890" y="60" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_15r4k7k_di" bpmnElement="Gateway_15r4k7k" isMarkerVisible="true">
+        <dc:Bounds x="915" y="195" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="855.5" y="206" width="49" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_0vh5yq7_di" bpmnElement="Activity_0vh5yq7">
+        <dc:Bounds x="1090" y="180" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_1uwuz3m_di" bpmnElement="Activity_1uwuz3m">
+        <dc:Bounds x="890" y="310" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_0pnqch2_di" bpmnElement="Activity_0pnqch2">
+        <dc:Bounds x="890" y="430" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_0vstkg8_di" bpmnElement="Activity_0vstkg8">
+        <dc:Bounds x="890" y="570" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_05xztic_di" bpmnElement="Gateway_05xztic" isMarkerVisible="true">
+        <dc:Bounds x="915" y="685" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="910.5" y="744.5" width="59" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_1oosj62_di" bpmnElement="Activity_1oosj62">
+        <dc:Bounds x="1080" y="670" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_1yqomhx_di" bpmnElement="Activity_1yqomhx">
+        <dc:Bounds x="490" y="450" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_0twut0g_di" bpmnElement="Activity_0twut0g">
+        <dc:Bounds x="490" y="300" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_0mbgd74_di" bpmnElement="Event_0mbgd74">
+        <dc:Bounds x="322" y="322" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="298" y="365" width="84" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_1ybcr9e_di" bpmnElement="Event_1ybcr9e">
+        <dc:Bounds x="1282" y="202" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_1lf9p7t_di" bpmnElement="Event_1lf9p7t">
+        <dc:Bounds x="1282" y="692" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_1htzxpq_di" bpmnElement="Activity_1htzxpq">
+        <dc:Bounds x="700" y="670" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_18nntx4_di" bpmnElement="Activity_18nntx4">
+        <dc:Bounds x="500" y="670" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_0tna6v3_di" bpmnElement="Flow_0tna6v3">
+        <di:waypoint x="208" y="100" />
+        <di:waypoint x="310" y="100" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1o200lh_di" bpmnElement="Flow_1o200lh">
+        <di:waypoint x="410" y="100" />
+        <di:waypoint x="510" y="100" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1rk1qpb_di" bpmnElement="Flow_1rk1qpb">
+        <di:waypoint x="610" y="100" />
+        <di:waypoint x="690" y="100" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_02p3hdp_di" bpmnElement="Flow_02p3hdp">
+        <di:waypoint x="790" y="100" />
+        <di:waypoint x="890" y="100" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1d2m3ij_di" bpmnElement="Flow_1d2m3ij">
+        <di:waypoint x="940" y="140" />
+        <di:waypoint x="940" y="195" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_08sxxw9_di" bpmnElement="Flow_08sxxw9">
+        <di:waypoint x="965" y="220" />
+        <di:waypoint x="1090" y="220" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1026" y="197" width="17" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_034xv10_di" bpmnElement="Flow_034xv10">
+        <di:waypoint x="940" y="245" />
+        <di:waypoint x="940" y="310" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="907" y="288" width="17" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_01j0m0c_di" bpmnElement="Flow_01j0m0c">
+        <di:waypoint x="1190" y="220" />
+        <di:waypoint x="1282" y="220" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0xhuk7n_di" bpmnElement="Flow_0xhuk7n">
+        <di:waypoint x="940" y="390" />
+        <di:waypoint x="940" y="430" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0ovtgcr_di" bpmnElement="Flow_0ovtgcr">
+        <di:waypoint x="940" y="510" />
+        <di:waypoint x="940" y="570" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0noxz7o_di" bpmnElement="Flow_0noxz7o">
+        <di:waypoint x="940" y="650" />
+        <di:waypoint x="940" y="685" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_175i6lc_di" bpmnElement="Flow_175i6lc">
+        <di:waypoint x="965" y="710" />
+        <di:waypoint x="1080" y="710" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="990" y="698" width="17" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0oi4yg8_di" bpmnElement="Flow_0oi4yg8">
+        <di:waypoint x="915" y="710" />
+        <di:waypoint x="800" y="710" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="829" y="708" width="18" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0qsv7pv_di" bpmnElement="Flow_0qsv7pv">
+        <di:waypoint x="1180" y="710" />
+        <di:waypoint x="1282" y="710" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0ao7qib_di" bpmnElement="Flow_0ao7qib">
+        <di:waypoint x="550" y="670" />
+        <di:waypoint x="550" y="530" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_15jo8rb_di" bpmnElement="Flow_15jo8rb">
+        <di:waypoint x="540" y="450" />
+        <di:waypoint x="540" y="380" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1wh9ume_di" bpmnElement="Flow_1wh9ume">
+        <di:waypoint x="490" y="340" />
+        <di:waypoint x="358" y="340" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0fjqm14_di" bpmnElement="Flow_0fjqm14">
+        <di:waypoint x="700" y="710" />
+        <di:waypoint x="600" y="710" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
